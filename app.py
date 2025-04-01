@@ -211,7 +211,7 @@ def run_simulation(
             minted_total += drain_amount
         else:
             # If still minting
-            redirected = results["gamma"][idx] * delta_M if delta_M > 0 else 0
+            redirected = (1-results["gamma"][idx]) * delta_M if delta_M > 0 else 0
             results["redirected"][idx] = redirected
             
             results["vault"][idx] = redirected

@@ -368,16 +368,16 @@ def plot_monte_carlo_results(power_results: Dict[str, Any], logistic_results: Di
     emission_data = pd.DataFrame({
         'Week': power_results["time"],
         'M(t)': power_results["M"]/1e6,
-        'Power_M*(t)': power_results["median"]["cumulative_minted"]/1e6,
+        'Power M*(t)': power_results["median"]["cumulative_minted"]/1e6,
         'Power_Lower_CI': power_results["lower_ci"]["cumulative_minted"]/1e6,
         'Power_Upper_CI': power_results["upper_ci"]["cumulative_minted"]/1e6,
-        'Logistic_M*(t)': logistic_results["median"]["cumulative_minted"]/1e6,
+        'Logistic M*(t)': logistic_results["median"]["cumulative_minted"]/1e6,
         'Logistic_Lower_CI': logistic_results["lower_ci"]["cumulative_minted"]/1e6,
         'Logistic_Upper_CI': logistic_results["upper_ci"]["cumulative_minted"]/1e6,
-        'Exponential_M*(t)': exponential_results["median"]["cumulative_minted"]/1e6,
+        'Exponential M*(t)': exponential_results["median"]["cumulative_minted"]/1e6,
         'Exponential_Lower_CI': exponential_results["lower_ci"]["cumulative_minted"]/1e6,
         'Exponential_Upper_CI': exponential_results["upper_ci"]["cumulative_minted"]/1e6,
-        'Normalized_Log_M*(t)': normalized_log_results["median"]["cumulative_minted"]/1e6,
+        'NormalizedLog M*(t)': normalized_log_results["median"]["cumulative_minted"]/1e6,
         'Normalized_Log_Lower_CI': normalized_log_results["lower_ci"]["cumulative_minted"]/1e6,
         'Normalized_Log_Upper_CI': normalized_log_results["upper_ci"]["cumulative_minted"]/1e6
     })
@@ -430,7 +430,7 @@ def plot_monte_carlo_results(power_results: Dict[str, Any], logistic_results: Di
     emission_melt = pd.melt(
         emission_data, 
         id_vars=['Week'], 
-        value_vars=['M(t)', 'Power_M*(t)', 'Logistic_M*(t)', 'Exponential_M*(t)', 'Normalized_Log_M*(t)'],
+        value_vars=['M(t)', 'Power M*(t)', 'Logistic M*(t)', 'Exponential M*(t)', 'NormalizedLog M*(t)'],
         var_name='Series', 
         value_name='Value'
     )
@@ -439,7 +439,7 @@ def plot_monte_carlo_results(power_results: Dict[str, Any], logistic_results: Di
         x='Week:Q',
         y='Value:Q',
         color=alt.Color('Series:N', 
-                       scale=alt.Scale(domain=['M(t)', 'Power_M*(t)', 'Logistic_M*(t)', 'Exponential_M*(t)', 'Normalized_Log_M*(t)'], 
+                       scale=alt.Scale(domain=['M(t)', 'Power M*(t)', 'Logistic M*(t)', 'Exponential M*(t)', 'NormalizedLog M*(t)'], 
                                        range=['blue', power_color, logistic_color, exponential_color, normalized_log_color]),
                        legend=alt.Legend(title='', orient='top')),
     )
@@ -598,7 +598,7 @@ def plot_monte_carlo_results(power_results: Dict[str, Any], logistic_results: Di
         'Exponential_Drained': exponential_results["median"]["cumulative_drained"]/1e6,
         'Exponential_Lower_Drained': exponential_results["lower_ci"]["cumulative_drained"]/1e6,
         'Exponential_Upper_Drained': exponential_results["upper_ci"]["cumulative_drained"]/1e6,
-        'Normalized_Log': normalized_log_results["median"]["cumulative_vault"]/1e6,
+        'NormalizedLog': normalized_log_results["median"]["cumulative_vault"]/1e6,
         'Normalized_Log_Lower_Vault': normalized_log_results["lower_ci"]["cumulative_vault"]/1e6,
         'Normalized_Log_Upper_Vault': normalized_log_results["upper_ci"]["cumulative_vault"]/1e6,
         'Normalized_Log_Drained': normalized_log_results["median"]["cumulative_drained"]/1e6,
@@ -682,7 +682,7 @@ def plot_monte_carlo_results(power_results: Dict[str, Any], logistic_results: Di
         token_data, 
         id_vars=['Week'], 
         # value_vars=['Power_Vault','Power_Drained','Logistic_Vault','Logistic_Drained', 'Exponential_Vault', 'Exponential_Drained', 'Normalized_Log_Vault', 'Normalized_Log_Drained'],
-        value_vars=['Power','Logistic', 'Exponential', 'Normalized_Log'],
+        value_vars=['Power','Logistic', 'Exponential', 'NormalizedLog'],
         var_name='Series', 
         value_name='Value'
     )
@@ -691,7 +691,7 @@ def plot_monte_carlo_results(power_results: Dict[str, Any], logistic_results: Di
         x='Week:Q',
         y='Value:Q',
         color=alt.Color('Series:N', 
-                       scale=alt.Scale(domain=['Power','Logistic','Exponential', 'Normalized_Log'],
+                       scale=alt.Scale(domain=['Power','Logistic','Exponential', 'NormalizedLog'],
                                        range=[power_color, logistic_color, exponential_color, normalized_log_color]),
                        legend=alt.Legend(title='', orient='top')),
         # strokeDash=alt.condition(

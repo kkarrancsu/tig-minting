@@ -46,67 +46,64 @@ def M(t: float) -> float:
     return 104832000 + 63000 * (t - 390)
 
 # =====================================================
-# 1. Homogeneous Poisson Process (existing function)
+# 1. Homogeneous Poisson Process (updated to include initial_value)
 # =====================================================
 def generate_poisson_process(
     total_weeks: int,
     mean_interarrival_time: float,
-    random_seed: int = 1234
+    random_seed: int = 1234,
+    initial_value: int = 0,
+    vault_start_week: int = 0
 ) -> List[int]:
-    """
-    Generate a homogeneous Poisson process (fixed rate = 1/mean_interarrival_time).
-    Return G(t) = number of arrivals by time t, for t = 1,...,total_weeks.
-    """
     np.random.seed(random_seed)
     
-    # scale = mean_interarrival_time => mean of Exponential
     interarrival_times = np.random.exponential(
         scale=mean_interarrival_time,
-        size=total_weeks * 2  # overshoot to be safe
+        size=total_weeks * 2
     )
     arrival_times = np.cumsum(interarrival_times)
     
     G = []
     for t in range(1, total_weeks + 1):
-        count = np.sum(arrival_times <= t)
-        G.append(int(count))
+        if vault_start_week <= 0 or t >= vault_start_week:
+            # After vault start: use Poisson process with initial value
+            count = np.sum(arrival_times <= t)
+            G.append(int(count) + initial_value)
+        else:
+            # Before vault start: linear growth from 0 to initial_value
+            G.append(int(initial_value * t / vault_start_week))
     
     return G
 
 # =====================================================
-# 2. Non-homogeneous Poisson Process (NEW)
+# 2. Non-homogeneous Poisson Process (updated to include initial_value)
 # =====================================================
 def generate_poisson_process_nonhomogeneous(
     total_weeks: int,
     rate_func: Callable[[float], float],
     random_seed: int = 1234,
-    num_samples_for_max_rate: int = 1000
+    num_samples_for_max_rate: int = 1000,
+    initial_value: int = 0,
+    vault_start_week: int = 0
 ) -> List[int]:
-    """
-    Generate a non-homogeneous Poisson process for t in [0, total_weeks]
-    using the 'thinning' method. The rate function is given by `rate_func(t)`.
-
-    Returns G(t) = number of arrivals by time t, for t = 1,...,total_weeks.
-    """
     np.random.seed(random_seed)
     
-    # 1) Estimate lambda_max by sampling the rate function over [0, total_weeks]
+    # Get max rate for rejection sampling
     sample_points = np.linspace(0, total_weeks, num_samples_for_max_rate + 1)
     lambda_vals = [rate_func(x) for x in sample_points]
     lambda_max = max(lambda_vals)
     
-    # 2) Generate candidate events from a Homogeneous Poisson Process with rate = lambda_max
+    # Generate candidate arrival times using homogeneous Poisson process
     arrival_times_candidate = []
     current_time = 0.0
     while True:
-        # Exponential interarrival with mean = 1 / lambda_max
         interarrival = np.random.exponential(1.0 / lambda_max)
         current_time += interarrival
         if current_time > total_weeks:
             break
         arrival_times_candidate.append(current_time)
     
-    # 3) Thinning step: accept arrival at time s with prob = rate_func(s)/lambda_max
+    # Thin using rejection sampling
     arrival_times = []
     for s in arrival_times_candidate:
         if np.random.rand() < (rate_func(s) / lambda_max):
@@ -114,31 +111,57 @@ def generate_poisson_process_nonhomogeneous(
     
     arrival_times = np.array(arrival_times)
     
-    # 4) Build G(t) for t = 1,...,total_weeks
+    # Generate the cumulative counts
     G = []
-    for t in range(1, total_weeks + 1):
-        count = np.sum(arrival_times <= t)
-        G.append(int(count))
+    
+    if vault_start_week <= 0:
+        # If vault starts immediately or doesn't exist
+        for t in range(1, total_weeks + 1):
+            count = np.sum(arrival_times <= t)
+            G.append(int(count) + initial_value)
+    else:
+        # Before vault start: linear growth from 0 to initial_value
+        for t in range(1, vault_start_week):
+            G.append(int(initial_value * t / vault_start_week))
+        
+        # At vault start week: exactly the initial_value (smooth transition)
+        G.append(initial_value)
+        
+        # After vault start: continue Poisson process from this point
+        # Only count arrivals after vault_start_week
+        post_vault_arrivals = arrival_times[arrival_times > vault_start_week]
+        for t in range(vault_start_week + 1, total_weeks + 1):
+            # Add new arrivals to the initial_value
+            new_arrivals = np.sum((vault_start_week < post_vault_arrivals) & (post_vault_arrivals <= t))
+            G.append(initial_value + int(new_arrivals))
     
     return G
 
 # ======================
 # Gamma functions
 # ======================
-def gamma_function_power(n: int, alpha: float) -> float:
-    return (n ** alpha) / (1 + n ** alpha)
+def gamma_function_power(n: int, alpha: float, offset: int = 0) -> float:
+    if n < offset:
+        return 0
+    return ((n-offset) ** alpha) / (1 + (n-offset) ** alpha)
 
-def gamma_logistic(n: int, b: float, c: float) -> float:
-    return 1 / (1 + np.exp(-b * (n - c)))
+def gamma_logistic(n: int, b: float, c: float, offset: int = 0) -> float:
+    if n < offset:
+        return 0
+    return 1 / (1 + np.exp(-b * (n - c - offset)))
 
-def gamma_exponential(n: int, b: float) -> float:
-    return 1-np.exp(-b * n)
+def gamma_exponential(n: int, b: float, offset: int = 0) -> float:
+    if n < offset:
+        return 0
+    return 1-np.exp(-b * (n - offset))
 
-def gamma_normalized_log(n: int, a: float, N_ref: float) -> float:
-    return np.log(1+a*n) / np.log(1+a*N_ref)
+def gamma_normalized_log(n: int, a: float, N_ref: float, offset: int = 0) -> float:
+    if n < offset:
+        return 0
+    return np.log(1+a*(n-offset)) / np.log(1+a*N_ref)
 
 # ======================================================
-# run_simulation
+# run_simulation (updated to include vault_start_week)
 # ======================================================
 def run_simulation(
     total_weeks: int,
@@ -147,14 +170,10 @@ def run_simulation(
     gamma_func_params: tuple,
     random_seed: int = 2345,
     use_nonhomogeneous: bool = False,
-    custom_rate_func: Callable[[float], float] = None
+    custom_rate_func: Callable[[float], float] = None,
+    initial_poisson_value: int = 0,
+    vault_start_week: int = 0
 ) -> Dict[str, Any]:
-    """
-    Runs one simulation path. 
-    - If `use_nonhomogeneous` is False, generates G via homogeneous Poisson process 
-      with mean_interarrival_time.
-    - If True, uses the provided custom_rate_func(t) for a non-homogeneous Poisson.
-    """
     results = {
         "time": np.arange(1, total_weeks + 1),
         "M": np.zeros(total_weeks),
@@ -166,24 +185,31 @@ def run_simulation(
         "vault_drained": np.zeros(total_weeks),
         "cumulative_vault": np.zeros(total_weeks),
         "cumulative_minted": np.zeros(total_weeks),
-        "cumulative_drained": np.zeros(total_weeks)
+        "cumulative_drained": np.zeros(total_weeks),
+        "vault_start_week": vault_start_week
     }
     
-    # --------------------------------------------------
-    # Generate Poisson process G(t)
-    # --------------------------------------------------
+    # Generate Poisson process G(t) with initial value and linear growth until vault_start_week
     if not use_nonhomogeneous:
-        # Homogeneous
-        G_vals = generate_poisson_process(total_weeks, mean_interarrival_time, random_seed)
+        G_vals = generate_poisson_process(
+            total_weeks, 
+            mean_interarrival_time, 
+            random_seed, 
+            initial_poisson_value,
+            vault_start_week
+        )
     else:
-        # Non-homogeneous
-        G_vals = generate_poisson_process_nonhomogeneous(total_weeks, custom_rate_func, random_seed)
+        G_vals = generate_poisson_process_nonhomogeneous(
+            total_weeks, 
+            custom_rate_func, 
+            random_seed,
+            initial_value=initial_poisson_value,
+            vault_start_week=vault_start_week
+        )
     
     results["G"] = np.array(G_vals)
     
-    # --------------------------------------------------
-    # Apply your existing "vault / minted" logic
-    # --------------------------------------------------
+    # Apply vault / minted logic with vault start date
     vault_total = 0
     minted_total = 0
     drained_total = 0
@@ -204,8 +230,11 @@ def run_simulation(
         # Start draining if M(t) stops increasing
         if not start_draining_vault and delta_M == 0:
             start_draining_vault = True
-            
-        if start_draining_vault:
+        
+        # Check if vault is active (only when current week >= vault_start_week)
+        vault_active = vault_start_week > 0 and t >= vault_start_week
+        
+        if start_draining_vault and vault_active:
             # Drain from vault
             drain_amount = min(mint_amt, vault_total)
             results["vault_drained"][idx] = drain_amount
@@ -216,15 +245,22 @@ def run_simulation(
             results["minted"][idx] += drain_amount
             minted_total += drain_amount
         else:
-            # If still minting
-            redirected = (1-results["gamma"][idx]) * delta_M if delta_M > 0 else 0
-            results["redirected"][idx] = redirected
+            # If we're still in minting phase or vault not active yet
+            if vault_active:
+                # Vault is active, redirect some funds
+                redirected = (1-results["gamma"][idx]) * delta_M if delta_M > 0 else 0
+                results["redirected"][idx] = redirected
+                
+                results["vault"][idx] = redirected
+                results["minted"][idx] = delta_M - redirected
+                
+                vault_total += redirected
+                mint_amt = delta_M - redirected
+            else:
+                # No vault redirection - all tokens are minted directly
+                results["minted"][idx] = delta_M
+                mint_amt = delta_M
             
-            results["vault"][idx] = redirected
-            results["minted"][idx] = delta_M - redirected
-            
-            vault_total += redirected
-            mint_amt = delta_M - redirected
             minted_total += mint_amt
         
         # Update cumulative
@@ -236,7 +272,7 @@ def run_simulation(
 
 
 # ======================================================
-# run_monte_carlo_simulations
+# run_monte_carlo_simulations (updated with new parameters)
 # ======================================================
 def run_monte_carlo_simulations(
     n_simulations: int,
@@ -247,12 +283,10 @@ def run_monte_carlo_simulations(
     progress_callback: Callable[[float], None] = None,
     random_seed: int = 2345,
     use_nonhomogeneous: bool = False,
-    custom_rate_func: Callable[[float], float] = None
+    custom_rate_func: Callable[[float], float] = None,
+    initial_poisson_value: int = 0,
+    vault_start_week: int = 0
 ) -> Dict[str, Any]:
-    """
-    Repeatedly calls run_simulation() to produce multiple paths and 
-    aggregate median and confidence intervals.
-    """
     all_simulations = []
     
     for i in range(n_simulations):
@@ -264,7 +298,9 @@ def run_monte_carlo_simulations(
             gamma_func_params=gamma_func_params,
             random_seed=seed,
             use_nonhomogeneous=use_nonhomogeneous,
-            custom_rate_func=custom_rate_func
+            custom_rate_func=custom_rate_func,
+            initial_poisson_value=initial_poisson_value,
+            vault_start_week=vault_start_week
         )
         all_simulations.append(result)
         
@@ -276,7 +312,8 @@ def run_monte_carlo_simulations(
         "M": np.zeros(total_weeks),
         "median": {},
         "lower_ci": {},
-        "upper_ci": {}
+        "upper_ci": {},
+        "vault_start_week": vault_start_week
     }
     
     # We can use M from the first simulation (same for all if M(t) is deterministic).
@@ -294,18 +331,38 @@ def run_monte_carlo_simulations(
     
     return aggregated_results
 
+# Helper function to add vault start line to charts
+def add_vault_start_line(chart, vault_start_data):
+    if vault_start_data is not None:
+        vault_line = alt.Chart(vault_start_data).mark_rule(
+            strokeDash=[6, 3],
+            color='black'
+        ).encode(
+            x='Week:Q',
+            tooltip=['Label:N']
+        )
+        return alt.layer(chart, vault_line)
+    return chart
+
 # ======================================================
-# Plotting function
+# Plotting function (updated to show vault start line)
 # ======================================================
 def plot_monte_carlo_results(power_results: Dict[str, Any], logistic_results: Dict[str, Any], exponential_results: Dict[str, Any], normalized_log_results: Dict[str, Any]) -> Dict[str, alt.Chart]:
-    """
-    Creates Altair charts for the results. 
-    For brevity, this is unchanged except for referencing the existing results.
-    """
     power_color = "green"
     logistic_color = "purple"
     exponential_color = "red"
     normalized_log_color = "orange"
+    
+    # Get vault start week (should be the same for all results)
+    vault_start_week = power_results.get("vault_start_week", 0)
+    
+    # Create vertical line data if vault_start_week > 0
+    vault_start_data = None
+    if vault_start_week > 0:
+        vault_start_data = pd.DataFrame({
+            'Week': [vault_start_week],
+            'Label': [f'Vault Starts (Week {vault_start_week})']
+        })
     
     # ========== Chart 1: Emission Schedule ==========
     emission_data = pd.DataFrame({
@@ -373,7 +430,7 @@ def plot_monte_carlo_results(power_results: Dict[str, Any], logistic_results: Di
     emission_melt = pd.melt(
         emission_data, 
         id_vars=['Week'], 
-        value_vars=['M(t)', 'Power_M*(t)', 'Logistic_M*(t)', 'Exponential_M*(t)'],
+        value_vars=['M(t)', 'Power_M*(t)', 'Logistic_M*(t)', 'Exponential_M*(t)', 'Normalized_Log_M*(t)'],
         var_name='Series', 
         value_name='Value'
     )
@@ -396,6 +453,9 @@ def plot_monte_carlo_results(power_results: Dict[str, Any], logistic_results: Di
         height=300,
         title='Token Emission Schedule'
     )
+    
+    # Add vault start line to emission chart
+    emission_chart = add_vault_start_line(emission_chart, vault_start_data)
     
     # ========== Chart 2: Event count (G) ==========
     event_data = pd.DataFrame({
@@ -425,21 +485,24 @@ def plot_monte_carlo_results(power_results: Dict[str, Any], logistic_results: Di
         title='Total Challenges'
     )
     
+    # Add vault start line to event chart
+    event_chart = add_vault_start_line(event_chart, vault_start_data)
+    
     # ========== Chart 3: Gamma chart ==========
     gamma_data = pd.DataFrame({
         'Week': power_results["time"],
-        'PowerFn': power_results["median"]["gamma"],
-        'PowerFn_Lower_CI': power_results["lower_ci"]["gamma"],
-        'PowerFn_Upper_CI': power_results["upper_ci"]["gamma"],
-        'LogisticFn': logistic_results["median"]["gamma"],
-        'LogisticFn_Lower_CI': logistic_results["lower_ci"]["gamma"],
-        'LogisticFn_Upper_CI': logistic_results["upper_ci"]["gamma"],
-        'ExponentialFn': exponential_results["median"]["gamma"],
-        'ExponentialFn_Lower_CI': exponential_results["lower_ci"]["gamma"],
-        'ExponentialFn_Upper_CI': exponential_results["upper_ci"]["gamma"],
-        'Normalized_LogFn': normalized_log_results["median"]["gamma"],
-        'Normalized_LogFn_Lower_CI': normalized_log_results["lower_ci"]["gamma"],
-        'Normalized_LogFn_Upper_CI': normalized_log_results["upper_ci"]["gamma"]
+        'Power': power_results["median"]["gamma"],
+        'Power_Lower_CI': power_results["lower_ci"]["gamma"],
+        'Power_Upper_CI': power_results["upper_ci"]["gamma"],
+        'Logistic': logistic_results["median"]["gamma"],
+        'Logistic_Lower_CI': logistic_results["lower_ci"]["gamma"],
+        'Logistic_Upper_CI': logistic_results["upper_ci"]["gamma"],
+        'Exponential': exponential_results["median"]["gamma"],
+        'Exponential_Lower_CI': exponential_results["lower_ci"]["gamma"],
+        'Exponential_Upper_CI': exponential_results["upper_ci"]["gamma"],
+        'Normalized_Log': normalized_log_results["median"]["gamma"],
+        'Normalized_Log_Lower_CI': normalized_log_results["lower_ci"]["gamma"],
+        'Normalized_Log_Upper_CI': normalized_log_results["upper_ci"]["gamma"]
     })
     
     gamma_base = alt.Chart(gamma_data).encode(
@@ -447,45 +510,45 @@ def plot_monte_carlo_results(power_results: Dict[str, Any], logistic_results: Di
     )
     
     power_gamma_area = gamma_base.mark_area(opacity=0.3, color=power_color).encode(
-        y=alt.Y('PowerFn_Lower_CI:Q'),
-        y2=alt.Y2('PowerFn_Upper_CI:Q')
+        y=alt.Y('Power_Lower_CI:Q'),
+        y2=alt.Y2('Power_Upper_CI:Q')
     )
     power_gamma_line = gamma_base.mark_line(color=power_color).encode(
-        y=alt.Y('PowerFn:Q', title='Goal Progress'),
-        tooltip=['Week:Q', 'PowerFn:Q']
+        y=alt.Y('Power:Q', title='Goal Progress'),
+        tooltip=['Week:Q', 'Power:Q']
     )
     
     logistic_gamma_area = gamma_base.mark_area(opacity=0.3, color=logistic_color).encode(
-        y=alt.Y('LogisticFn_Lower_CI:Q'),
-        y2=alt.Y2('LogisticFn_Upper_CI:Q')
+        y=alt.Y('Logistic_Lower_CI:Q'),
+        y2=alt.Y2('Logistic_Upper_CI:Q')
     )
     logistic_gamma_line = gamma_base.mark_line(color=logistic_color).encode(
-        y=alt.Y('LogisticFn:Q'),
-        tooltip=['Week:Q', 'LogisticFn:Q']
+        y=alt.Y('Logistic:Q'),
+        tooltip=['Week:Q', 'Logistic:Q']
     )
 
     exponential_gamma_line = gamma_base.mark_line(color=exponential_color).encode(
-        y=alt.Y('ExponentialFn:Q'),
-        tooltip=['Week:Q', 'ExponentialFn:Q']
+        y=alt.Y('Exponential:Q'),
+        tooltip=['Week:Q', 'Exponential:Q']
     )
     exponential_gamma_area = gamma_base.mark_area(opacity=0.3, color=exponential_color).encode(
-        y=alt.Y('ExponentialFn_Lower_CI:Q'),
-        y2=alt.Y2('ExponentialFn_Upper_CI:Q')
+        y=alt.Y('Exponential_Lower_CI:Q'),
+        y2=alt.Y2('Exponential_Upper_CI:Q')
     )
 
     normalized_log_gamma_line = gamma_base.mark_line(color=normalized_log_color).encode(
-        y=alt.Y('Normalized_LogFn:Q'),
-        tooltip=['Week:Q', 'Normalized_LogFn:Q']
+        y=alt.Y('Normalized_Log:Q'),
+        tooltip=['Week:Q', 'Normalized_Log:Q']
     )
     normalized_log_gamma_area = gamma_base.mark_area(opacity=0.3, color=normalized_log_color).encode(
-        y=alt.Y('Normalized_LogFn_Lower_CI:Q'),
-        y2=alt.Y2('Normalized_LogFn_Upper_CI:Q')
+        y=alt.Y('Normalized_Log_Lower_CI:Q'),
+        y2=alt.Y2('Normalized_Log_Upper_CI:Q')
     )
     
     gamma_melt = pd.melt(
         gamma_data, 
         id_vars=['Week'], 
-        value_vars=['PowerFn', 'LogisticFn', 'ExponentialFn'],
+        value_vars=['Power', 'Logistic', 'Exponential', 'Normalized_Log'],
         var_name='Series', 
         value_name='Value'
     )
@@ -494,8 +557,8 @@ def plot_monte_carlo_results(power_results: Dict[str, Any], logistic_results: Di
         x='Week:Q',
         y='Value:Q',
         color=alt.Color('Series:N', 
-                       scale=alt.Scale(domain=['PowerFn', 'LogisticFn', 'ExponentialFn'], 
-                                       range=[power_color, logistic_color, exponential_color]),
+                       scale=alt.Scale(domain=['Power', 'Logistic', 'Exponential', 'Normalized_Log'], 
+                                       range=[power_color, logistic_color, exponential_color, normalized_log_color]),
                        legend=alt.Legend(title='', orient='top')),
     )
     
@@ -511,27 +574,31 @@ def plot_monte_carlo_results(power_results: Dict[str, Any], logistic_results: Di
         title='Goal Progress'
     )
     
+    # Add vault start line to gamma chart
+    gamma_chart = add_vault_start_line(gamma_chart, vault_start_data)
+    
     # ========== Chart 4: Cumulative tokens (vault) ==========
     token_data = pd.DataFrame({
         'Week': power_results["time"],
-        'Power_Vault': power_results["median"]["cumulative_vault"]/1e6,
+        'Power': power_results["median"]["cumulative_vault"]/1e6,
         'Power_Lower_Vault': power_results["lower_ci"]["cumulative_vault"]/1e6,
         'Power_Upper_Vault': power_results["upper_ci"]["cumulative_vault"]/1e6,
         'Power_Drained': power_results["median"]["cumulative_drained"]/1e6,
         'Power_Lower_Drained': power_results["lower_ci"]["cumulative_drained"]/1e6,
         'Power_Upper_Drained': power_results["upper_ci"]["cumulative_drained"]/1e6,
-        'Logistic_Vault': logistic_results["median"]["cumulative_vault"]/1e6,
+        'Logistic': logistic_results["median"]["cumulative_vault"]/1e6,
         'Logistic_Lower_Vault': logistic_results["lower_ci"]["cumulative_vault"]/1e6,
         'Logistic_Upper_Vault': logistic_results["upper_ci"]["cumulative_vault"]/1e6,
         'Logistic_Drained': logistic_results["median"]["cumulative_drained"]/1e6,
         'Logistic_Lower_Drained': logistic_results["lower_ci"]["cumulative_drained"]/1e6,
         'Logistic_Upper_Drained': logistic_results["upper_ci"]["cumulative_drained"]/1e6,
-        'Exponential_Vault': exponential_results["median"]["cumulative_vault"]/1e6,
+        'Exponential': exponential_results["median"]["cumulative_vault"]/1e6,
         'Exponential_Lower_Vault': exponential_results["lower_ci"]["cumulative_vault"]/1e6,
         'Exponential_Upper_Vault': exponential_results["upper_ci"]["cumulative_vault"]/1e6,
         'Exponential_Drained': exponential_results["median"]["cumulative_drained"]/1e6,
         'Exponential_Lower_Drained': exponential_results["lower_ci"]["cumulative_drained"]/1e6,
-        'Normalized_Log_Vault': normalized_log_results["median"]["cumulative_vault"]/1e6,
+        'Exponential_Upper_Drained': exponential_results["upper_ci"]["cumulative_drained"]/1e6,
+        'Normalized_Log': normalized_log_results["median"]["cumulative_vault"]/1e6,
         'Normalized_Log_Lower_Vault': normalized_log_results["lower_ci"]["cumulative_vault"]/1e6,
         'Normalized_Log_Upper_Vault': normalized_log_results["upper_ci"]["cumulative_vault"]/1e6,
         'Normalized_Log_Drained': normalized_log_results["median"]["cumulative_drained"]/1e6,
@@ -551,14 +618,14 @@ def plot_monte_carlo_results(power_results: Dict[str, Any], logistic_results: Di
     power_vault_line = token_base.mark_line(color=power_color).encode(
         y=alt.Y('Power_Vault:Q', title='M-TIG')
     )
-    # Drained (Power)
-    power_drained_area = token_base.mark_area(opacity=0.3, color='orange', fillOpacity=0.1).encode(
-        y=alt.Y('Power_Lower_Drained:Q'),
-        y2=alt.Y2('Power_Upper_Drained:Q')
-    )
-    power_drained_line = token_base.mark_line(color='orange', strokeDash=[8, 4]).encode(
-        y=alt.Y('Power_Drained:Q')
-    )
+    # # Drained (Power)
+    # power_drained_area = token_base.mark_area(opacity=0.3, color='orange', fillOpacity=0.1).encode(
+    #     y=alt.Y('Power_Lower_Drained:Q'),
+    #     y2=alt.Y2('Power_Upper_Drained:Q')
+    # )
+    # power_drained_line = token_base.mark_line(color='orange', strokeDash=[8, 4]).encode(
+    #     y=alt.Y('Power_Drained:Q')
+    # )
     
     # Logistic Vault
     logistic_vault_area = token_base.mark_area(opacity=0.3, color=logistic_color).encode(
@@ -568,14 +635,14 @@ def plot_monte_carlo_results(power_results: Dict[str, Any], logistic_results: Di
     logistic_vault_line = token_base.mark_line(color=logistic_color).encode(
         y=alt.Y('Logistic_Vault:Q')
     )
-    # Drained (Logistic)
-    logistic_drained_area = token_base.mark_area(opacity=0.3, color='blue', fillOpacity=0.1).encode(
-        y=alt.Y('Logistic_Lower_Drained:Q'),
-        y2=alt.Y2('Logistic_Upper_Drained:Q')
-    )
-    logistic_drained_line = token_base.mark_line(color='blue', strokeDash=[8, 4]).encode(
-        y=alt.Y('Logistic_Drained:Q')
-    )
+    # # Drained (Logistic)
+    # logistic_drained_area = token_base.mark_area(opacity=0.3, color='blue', fillOpacity=0.1).encode(
+    #     y=alt.Y('Logistic_Lower_Drained:Q'),
+    #     y2=alt.Y2('Logistic_Upper_Drained:Q')
+    # )
+    # logistic_drained_line = token_base.mark_line(color='blue', strokeDash=[8, 4]).encode(
+    #     y=alt.Y('Logistic_Drained:Q')
+    # )
 
     # Exponential Vault
     exponential_vault_area = token_base.mark_area(opacity=0.3, color=exponential_color).encode(
@@ -585,14 +652,14 @@ def plot_monte_carlo_results(power_results: Dict[str, Any], logistic_results: Di
     exponential_vault_line = token_base.mark_line(color=exponential_color).encode(
         y=alt.Y('Exponential_Vault:Q')
     )
-    # Drained (Exponential)
-    exponential_drained_area = token_base.mark_area(opacity=0.3, color='green', fillOpacity=0.1).encode(
-        y=alt.Y('Exponential_Lower_Drained:Q'),
-        y2=alt.Y2('Exponential_Upper_Drained:Q')
-    )
-    exponential_drained_line = token_base.mark_line(color='green', strokeDash=[8, 4]).encode(
-        y=alt.Y('Exponential_Drained:Q')
-    )
+    # # Drained (Exponential)
+    # exponential_drained_area = token_base.mark_area(opacity=0.3, color='green', fillOpacity=0.1).encode(
+    #     y=alt.Y('Exponential_Lower_Drained:Q'),
+    #     y2=alt.Y2('Exponential_Upper_Drained:Q')
+    # )
+    # exponential_drained_line = token_base.mark_line(color='green', strokeDash=[8, 4]).encode(
+    #     y=alt.Y('Exponential_Drained:Q')
+    # )
 
     # Normalized Log Vault
     normalized_log_vault_area = token_base.mark_area(opacity=0.3, color=normalized_log_color).encode(
@@ -602,19 +669,20 @@ def plot_monte_carlo_results(power_results: Dict[str, Any], logistic_results: Di
     normalized_log_vault_line = token_base.mark_line(color=normalized_log_color).encode(
         y=alt.Y('Normalized_Log_Vault:Q')
     )
-    # Drained (Normalized Log)
-    normalized_log_drained_area = token_base.mark_area(opacity=0.3, color='purple', fillOpacity=0.1).encode(
-        y=alt.Y('Normalized_Log_Lower_Drained:Q'),
-        y2=alt.Y2('Normalized_Log_Upper_Drained:Q')
-    )
-    normalized_log_drained_line = token_base.mark_line(color='purple', strokeDash=[8, 4]).encode(
-        y=alt.Y('Normalized_Log_Drained:Q')
-    )
+    # # Drained (Normalized Log)
+    # normalized_log_drained_area = token_base.mark_area(opacity=0.3, color='purple', fillOpacity=0.1).encode(
+    #     y=alt.Y('Normalized_Log_Lower_Drained:Q'),
+    #     y2=alt.Y2('Normalized_Log_Upper_Drained:Q')
+    # )
+    # normalized_log_drained_line = token_base.mark_line(color='purple', strokeDash=[8, 4]).encode(
+    #     y=alt.Y('Normalized_Log_Drained:Q')
+    # )
 
     token_melt = pd.melt(
         token_data, 
         id_vars=['Week'], 
-        value_vars=['Power_Vault', 'Power_Drained', 'Logistic_Vault', 'Logistic_Drained', 'Exponential_Vault', 'Exponential_Drained', 'Normalized_Log_Vault', 'Normalized_Log_Drained'],
+        # value_vars=['Power_Vault','Power_Drained','Logistic_Vault','Logistic_Drained', 'Exponential_Vault', 'Exponential_Drained', 'Normalized_Log_Vault', 'Normalized_Log_Drained'],
+        value_vars=['Power','Logistic', 'Exponential', 'Normalized_Log'],
         var_name='Series', 
         value_name='Value'
     )
@@ -623,31 +691,34 @@ def plot_monte_carlo_results(power_results: Dict[str, Any], logistic_results: Di
         x='Week:Q',
         y='Value:Q',
         color=alt.Color('Series:N', 
-                       scale=alt.Scale(domain=['Power_Vault','Power_Drained','Logistic_Vault','Logistic_Drained', 'Exponential_Vault', 'Exponential_Drained', 'Normalized_Log_Vault', 'Normalized_Log_Drained'],
-                                       range=[power_color, 'orange', logistic_color, 'blue', exponential_color, 'green', normalized_log_color, 'purple']),
+                       scale=alt.Scale(domain=['Power','Logistic','Exponential', 'Normalized_Log'],
+                                       range=[power_color, logistic_color, exponential_color, normalized_log_color]),
                        legend=alt.Legend(title='', orient='top')),
-        strokeDash=alt.condition(
-            (alt.datum.Series == 'Power_Drained') | (alt.datum.Series == 'Logistic_Drained'),
-            alt.value([8, 4]),
-            alt.value([0])
-        )
+        # strokeDash=alt.condition(
+        #     "indexof(datum.Series, 'Drained') >= 0",
+        #     alt.value([8, 4]),
+        #     alt.value([0])
+        # )
     )
     
     token_chart = alt.layer(
         power_vault_area, power_vault_line,
-        power_drained_area, power_drained_line,
+        # power_drained_area, power_drained_line,
         logistic_vault_area, logistic_vault_line,
-        logistic_drained_area, logistic_drained_line,
+        # logistic_drained_area, logistic_drained_line,
         exponential_vault_area, exponential_vault_line,
-        exponential_drained_area, exponential_drained_line,
+        # exponential_drained_area, exponential_drained_line,
         normalized_log_vault_area, normalized_log_vault_line,
-        normalized_log_drained_area, normalized_log_drained_line,
+        # normalized_log_drained_area, normalized_log_drained_line,
         token_legend
     ).properties(
         width=400, 
         height=300,
         title='Vault Dynamics'
     )
+    
+    # Add vault start line to token chart
+    token_chart = add_vault_start_line(token_chart, vault_start_data)
     
     # Layout: 2x2
     top_row = alt.hconcat(emission_chart, token_chart, spacing=0)
@@ -664,7 +735,7 @@ def plot_monte_carlo_results(power_results: Dict[str, Any], logistic_results: Di
 
 
 # ======================================================
-# Main Streamlit App
+# Main Streamlit App (updated with new UI controls)
 # ======================================================
 def main():
     st.title("TIG Emission Monte Carlo Simulation")
@@ -677,24 +748,28 @@ def main():
     
     total_weeks = st.sidebar.slider("Total Weeks", min_value=800, max_value=2000, value=1500, step=52)
     
+    # NEW: Add initial value for Poisson process
+    initial_poisson_value = st.sidebar.number_input("Initial Poisson Process Value", 
+                                                   min_value=0, max_value=100, value=4, step=1)
+    
+    # NEW: Add vault start week
+    vault_start_week = st.sidebar.number_input("Vault Start Week", 
+                                              min_value=74, max_value=total_weeks, value=78, step=1)
+    
     if process_type == "Homogeneous":
-        # We keep the same "mean_interarrival_time" approach
         mean_interarrival_time = st.sidebar.slider("Mean Interarrival Time (weeks)", 
                                                    min_value=1.0, max_value=52.0, value=10.0, step=1.0)
         custom_rate_func = None
     else:
-        # Non-homogeneous: user enters a Python expression for lambda(t)
         st.sidebar.write("Define your rate function λ(t). For example:")
         st.sidebar.code("0.1*np.sin(t)**2", language="python")
         
         rate_str = st.sidebar.text_input("λ(t) =", value="0.1*np.sin(t)**2")
         
-        # For safety, define a small function that returns eval of the string
         def user_rate_func(t):
             return eval(rate_str, {"t": t, "np": np, "__builtins__": {}})
         
         custom_rate_func = user_rate_func
-        # We won't use mean_interarrival_time in non-homogeneous
         mean_interarrival_time = 1.0  # dummy, not used
     
     # 2) Gamma Function parameters
@@ -727,6 +802,7 @@ def main():
         
         start_time = time.time()
         
+        gamma_start = initial_poisson_value
         # ===== Run simulations for Power Law =====
         status_text.text("Running Monte Carlo simulations for Power Law...")
         power_law_results = run_monte_carlo_simulations(
@@ -734,10 +810,12 @@ def main():
             total_weeks=total_weeks,
             mean_interarrival_time=mean_interarrival_time,
             gamma_func=gamma_function_power,
-            gamma_func_params=(alpha,),
-            progress_callback=lambda p: update_progress(p * 0.5),
+            gamma_func_params=(alpha,gamma_start),
+            progress_callback=lambda p: update_progress(p * 0.25),
             use_nonhomogeneous=(process_type == "Non-homogeneous"),
-            custom_rate_func=custom_rate_func
+            custom_rate_func=custom_rate_func,
+            initial_poisson_value=initial_poisson_value,
+            vault_start_week=vault_start_week
         )
         
         # ===== Run simulations for Logistic =====
@@ -747,10 +825,12 @@ def main():
             total_weeks=total_weeks,
             mean_interarrival_time=mean_interarrival_time,
             gamma_func=gamma_logistic,
-            gamma_func_params=(b, c),
-            progress_callback=lambda p: update_progress(0.5 + p * 0.5),
+            gamma_func_params=(b, c, gamma_start),
+            progress_callback=lambda p: update_progress(0.25 + p * 0.25),
             use_nonhomogeneous=(process_type == "Non-homogeneous"),
-            custom_rate_func=custom_rate_func
+            custom_rate_func=custom_rate_func,
+            initial_poisson_value=initial_poisson_value,
+            vault_start_week=vault_start_week
         )
 
         # ===== Run simulations for Exponential =====
@@ -760,10 +840,12 @@ def main():
             total_weeks=total_weeks,
             mean_interarrival_time=mean_interarrival_time,
             gamma_func=gamma_exponential,
-            gamma_func_params=(b_exp,),
-            progress_callback=lambda p: update_progress(0.5 + p * 0.5),
+            gamma_func_params=(b_exp, gamma_start),
+            progress_callback=lambda p: update_progress(0.5 + p * 0.25),
             use_nonhomogeneous=(process_type == "Non-homogeneous"),
-            custom_rate_func=custom_rate_func
+            custom_rate_func=custom_rate_func,
+            initial_poisson_value=initial_poisson_value,
+            vault_start_week=vault_start_week
         )
 
         # ===== Run simulations for Normalized Log =====
@@ -773,10 +855,12 @@ def main():
             total_weeks=total_weeks,
             mean_interarrival_time=mean_interarrival_time,
             gamma_func=gamma_normalized_log,
-            gamma_func_params=(a_log, Nref_log),
-            progress_callback=lambda p: update_progress(0.5 + p * 0.5),
+            gamma_func_params=(a_log, Nref_log, gamma_start),
+            progress_callback=lambda p: update_progress(0.75 + p * 0.25),
             use_nonhomogeneous=(process_type == "Non-homogeneous"),
-            custom_rate_func=custom_rate_func
+            custom_rate_func=custom_rate_func,
+            initial_poisson_value=initial_poisson_value,
+            vault_start_week=vault_start_week
         )
         
         
@@ -784,7 +868,6 @@ def main():
         status_text.text(f"Simulations completed in {end_time - start_time:.2f} seconds")
         
         # ------------- Display results -------------
-        # st.subheader("Simulation Results")
         charts = plot_monte_carlo_results(power_law_results, logistic_results, exponential_results, normalized_log_results)
         
         col1, col2 = st.columns(2)
@@ -839,6 +922,19 @@ def main():
         with metrics_cols_exponential[2]:
             st.metric("Median Drained (M-TIG)", 
                       f"{exponential_results['median']['cumulative_drained'][-1]/1e6:.2f}M")
+            
+        # ------ Normalized Log metrics ------
+        st.markdown("### Normalized Log")
+        metrics_cols_normalized_log = st.columns(3)
+        with metrics_cols_normalized_log[0]:
+            st.metric("Median Total Minted (M-TIG)", 
+                      f"{normalized_log_results['median']['cumulative_minted'][-1]/1e6:.2f}M")
+        with metrics_cols_normalized_log[1]:
+            st.metric("Median Vault Balance (M-TIG)", 
+                      f"{normalized_log_results['median']['cumulative_vault'][-1]/1e6:.2f}M")
+        with metrics_cols_normalized_log[2]:
+            st.metric("Median Drained (M-TIG)", 
+                      f"{normalized_log_results['median']['cumulative_drained'][-1]/1e6:.2f}M")
 
 if __name__ == "__main__":
     main()

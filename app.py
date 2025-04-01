@@ -578,9 +578,9 @@ def main():
     else:
         # Non-homogeneous: user enters a Python expression for lambda(t)
         st.sidebar.write("Define your rate function λ(t). For example:")
-        st.sidebar.code("0.1 + 0.05*t", language="python")
+        st.sidebar.code("0.1*np.sin(t)**2", language="python")
         
-        rate_str = st.sidebar.text_input("λ(t) =", value="0.1 + 0.05*t")
+        rate_str = st.sidebar.text_input("λ(t) =", value="0.1*np.sin(t)**2")
         
         # For safety, define a small function that returns eval of the string
         def user_rate_func(t):

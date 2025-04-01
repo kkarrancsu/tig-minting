@@ -131,6 +131,12 @@ def gamma_function_power(n: int, alpha: float) -> float:
 def gamma_logistic(n: int, b: float, c: float) -> float:
     return 1 / (1 + np.exp(-b * (n - c)))
 
+def gamma_exponential(n: int, b: float) -> float:
+    return 1-np.exp(-b * n)
+
+def gamma_normalized_log(n: int, a: float, N_ref: float) -> float:
+    return np.log(1+a*n) / np.log(1+a*N_ref)
+
 # ======================================================
 # run_simulation
 # ======================================================
@@ -291,13 +297,15 @@ def run_monte_carlo_simulations(
 # ======================================================
 # Plotting function
 # ======================================================
-def plot_monte_carlo_results(power_results: Dict[str, Any], logistic_results: Dict[str, Any]) -> Dict[str, alt.Chart]:
+def plot_monte_carlo_results(power_results: Dict[str, Any], logistic_results: Dict[str, Any], exponential_results: Dict[str, Any], normalized_log_results: Dict[str, Any]) -> Dict[str, alt.Chart]:
     """
     Creates Altair charts for the results. 
     For brevity, this is unchanged except for referencing the existing results.
     """
     power_color = "green"
     logistic_color = "purple"
+    exponential_color = "red"
+    normalized_log_color = "orange"
     
     # ========== Chart 1: Emission Schedule ==========
     emission_data = pd.DataFrame({
@@ -308,7 +316,13 @@ def plot_monte_carlo_results(power_results: Dict[str, Any], logistic_results: Di
         'Power_Upper_CI': power_results["upper_ci"]["cumulative_minted"]/1e6,
         'Logistic_M*(t)': logistic_results["median"]["cumulative_minted"]/1e6,
         'Logistic_Lower_CI': logistic_results["lower_ci"]["cumulative_minted"]/1e6,
-        'Logistic_Upper_CI': logistic_results["upper_ci"]["cumulative_minted"]/1e6
+        'Logistic_Upper_CI': logistic_results["upper_ci"]["cumulative_minted"]/1e6,
+        'Exponential_M*(t)': exponential_results["median"]["cumulative_minted"]/1e6,
+        'Exponential_Lower_CI': exponential_results["lower_ci"]["cumulative_minted"]/1e6,
+        'Exponential_Upper_CI': exponential_results["upper_ci"]["cumulative_minted"]/1e6,
+        'Normalized_Log_M*(t)': normalized_log_results["median"]["cumulative_minted"]/1e6,
+        'Normalized_Log_Lower_CI': normalized_log_results["lower_ci"]["cumulative_minted"]/1e6,
+        'Normalized_Log_Upper_CI': normalized_log_results["upper_ci"]["cumulative_minted"]/1e6
     })
     
     emission_base = alt.Chart(emission_data).encode(
@@ -337,11 +351,29 @@ def plot_monte_carlo_results(power_results: Dict[str, Any], logistic_results: Di
         y='Logistic_Lower_CI:Q',
         y2='Logistic_Upper_CI:Q'
     )
-    
+
+    exponential_emission_line = emission_base.mark_line(color=exponential_color).encode(
+        y='Exponential_M*(t):Q',
+        tooltip=['Week:Q', 'Exponential_M*(t):Q']
+    )
+    exponential_emission_area = emission_base.mark_area(opacity=0.3, color=exponential_color).encode(
+        y='Exponential_Lower_CI:Q',
+        y2='Exponential_Upper_CI:Q'
+    )
+
+    normalized_log_emission_line = emission_base.mark_line(color=normalized_log_color).encode(
+        y='Normalized_Log_M*(t):Q',
+        tooltip=['Week:Q', 'Normalized_Log_M*(t):Q']
+    )
+    normalized_log_emission_area = emission_base.mark_area(opacity=0.3, color=normalized_log_color).encode(
+        y='Normalized_Log_Lower_CI:Q',
+        y2='Normalized_Log_Upper_CI:Q'
+    )
+
     emission_melt = pd.melt(
         emission_data, 
         id_vars=['Week'], 
-        value_vars=['M(t)', 'Power_M*(t)', 'Logistic_M*(t)'],
+        value_vars=['M(t)', 'Power_M*(t)', 'Logistic_M*(t)', 'Exponential_M*(t)'],
         var_name='Series', 
         value_name='Value'
     )
@@ -350,14 +382,14 @@ def plot_monte_carlo_results(power_results: Dict[str, Any], logistic_results: Di
         x='Week:Q',
         y='Value:Q',
         color=alt.Color('Series:N', 
-                       scale=alt.Scale(domain=['M(t)', 'Power_M*(t)', 'Logistic_M*(t)'], 
-                                       range=['blue', power_color, logistic_color]),
+                       scale=alt.Scale(domain=['M(t)', 'Power_M*(t)', 'Logistic_M*(t)', 'Exponential_M*(t)', 'Normalized_Log_M*(t)'], 
+                                       range=['blue', power_color, logistic_color, exponential_color, normalized_log_color]),
                        legend=alt.Legend(title='', orient='top')),
     )
     
     emission_chart = alt.layer(
-        power_emission_area, logistic_emission_area,
-        emission_line_base, power_emission_line, logistic_emission_line,
+        power_emission_area, logistic_emission_area, exponential_emission_area, normalized_log_emission_area,
+        emission_line_base, power_emission_line, logistic_emission_line, exponential_emission_line, normalized_log_emission_line,
         emission_legend
     ).properties(
         width=400, 
@@ -396,12 +428,18 @@ def plot_monte_carlo_results(power_results: Dict[str, Any], logistic_results: Di
     # ========== Chart 3: Gamma chart ==========
     gamma_data = pd.DataFrame({
         'Week': power_results["time"],
-        'Power_Median_Gamma': power_results["median"]["gamma"],
-        'Power_Lower_Gamma': power_results["lower_ci"]["gamma"],
-        'Power_Upper_Gamma': power_results["upper_ci"]["gamma"],
-        'Logistic_Median_Gamma': logistic_results["median"]["gamma"],
-        'Logistic_Lower_Gamma': logistic_results["lower_ci"]["gamma"],
-        'Logistic_Upper_Gamma': logistic_results["upper_ci"]["gamma"]
+        'PowerFn': power_results["median"]["gamma"],
+        'PowerFn_Lower_CI': power_results["lower_ci"]["gamma"],
+        'PowerFn_Upper_CI': power_results["upper_ci"]["gamma"],
+        'LogisticFn': logistic_results["median"]["gamma"],
+        'LogisticFn_Lower_CI': logistic_results["lower_ci"]["gamma"],
+        'LogisticFn_Upper_CI': logistic_results["upper_ci"]["gamma"],
+        'ExponentialFn': exponential_results["median"]["gamma"],
+        'ExponentialFn_Lower_CI': exponential_results["lower_ci"]["gamma"],
+        'ExponentialFn_Upper_CI': exponential_results["upper_ci"]["gamma"],
+        'Normalized_LogFn': normalized_log_results["median"]["gamma"],
+        'Normalized_LogFn_Lower_CI': normalized_log_results["lower_ci"]["gamma"],
+        'Normalized_LogFn_Upper_CI': normalized_log_results["upper_ci"]["gamma"]
     })
     
     gamma_base = alt.Chart(gamma_data).encode(
@@ -409,27 +447,45 @@ def plot_monte_carlo_results(power_results: Dict[str, Any], logistic_results: Di
     )
     
     power_gamma_area = gamma_base.mark_area(opacity=0.3, color=power_color).encode(
-        y=alt.Y('Power_Lower_Gamma:Q'),
-        y2=alt.Y2('Power_Upper_Gamma:Q')
+        y=alt.Y('PowerFn_Lower_CI:Q'),
+        y2=alt.Y2('PowerFn_Upper_CI:Q')
     )
     power_gamma_line = gamma_base.mark_line(color=power_color).encode(
-        y=alt.Y('Power_Median_Gamma:Q', title='Goal Progress'),
-        tooltip=['Week:Q', 'Power_Median_Gamma:Q']
+        y=alt.Y('PowerFn:Q', title='Goal Progress'),
+        tooltip=['Week:Q', 'PowerFn:Q']
     )
     
     logistic_gamma_area = gamma_base.mark_area(opacity=0.3, color=logistic_color).encode(
-        y=alt.Y('Logistic_Lower_Gamma:Q'),
-        y2=alt.Y2('Logistic_Upper_Gamma:Q')
+        y=alt.Y('LogisticFn_Lower_CI:Q'),
+        y2=alt.Y2('LogisticFn_Upper_CI:Q')
     )
     logistic_gamma_line = gamma_base.mark_line(color=logistic_color).encode(
-        y=alt.Y('Logistic_Median_Gamma:Q'),
-        tooltip=['Week:Q', 'Logistic_Median_Gamma:Q']
+        y=alt.Y('LogisticFn:Q'),
+        tooltip=['Week:Q', 'LogisticFn:Q']
+    )
+
+    exponential_gamma_line = gamma_base.mark_line(color=exponential_color).encode(
+        y=alt.Y('ExponentialFn:Q'),
+        tooltip=['Week:Q', 'ExponentialFn:Q']
+    )
+    exponential_gamma_area = gamma_base.mark_area(opacity=0.3, color=exponential_color).encode(
+        y=alt.Y('ExponentialFn_Lower_CI:Q'),
+        y2=alt.Y2('ExponentialFn_Upper_CI:Q')
+    )
+
+    normalized_log_gamma_line = gamma_base.mark_line(color=normalized_log_color).encode(
+        y=alt.Y('Normalized_LogFn:Q'),
+        tooltip=['Week:Q', 'Normalized_LogFn:Q']
+    )
+    normalized_log_gamma_area = gamma_base.mark_area(opacity=0.3, color=normalized_log_color).encode(
+        y=alt.Y('Normalized_LogFn_Lower_CI:Q'),
+        y2=alt.Y2('Normalized_LogFn_Upper_CI:Q')
     )
     
     gamma_melt = pd.melt(
         gamma_data, 
         id_vars=['Week'], 
-        value_vars=['Power_Median_Gamma', 'Logistic_Median_Gamma'],
+        value_vars=['PowerFn', 'LogisticFn', 'ExponentialFn'],
         var_name='Series', 
         value_name='Value'
     )
@@ -438,14 +494,16 @@ def plot_monte_carlo_results(power_results: Dict[str, Any], logistic_results: Di
         x='Week:Q',
         y='Value:Q',
         color=alt.Color('Series:N', 
-                       scale=alt.Scale(domain=['Power_Median_Gamma', 'Logistic_Median_Gamma'], 
-                                       range=[power_color, logistic_color]),
+                       scale=alt.Scale(domain=['PowerFn', 'LogisticFn', 'ExponentialFn'], 
+                                       range=[power_color, logistic_color, exponential_color]),
                        legend=alt.Legend(title='', orient='top')),
     )
     
     gamma_chart = alt.layer(
         power_gamma_area, power_gamma_line,
         logistic_gamma_area, logistic_gamma_line,
+        exponential_gamma_area, exponential_gamma_line,
+        normalized_log_gamma_area, normalized_log_gamma_line,
         gamma_legend
     ).properties(
         width=400, 
@@ -467,7 +525,18 @@ def plot_monte_carlo_results(power_results: Dict[str, Any], logistic_results: Di
         'Logistic_Upper_Vault': logistic_results["upper_ci"]["cumulative_vault"]/1e6,
         'Logistic_Drained': logistic_results["median"]["cumulative_drained"]/1e6,
         'Logistic_Lower_Drained': logistic_results["lower_ci"]["cumulative_drained"]/1e6,
-        'Logistic_Upper_Drained': logistic_results["upper_ci"]["cumulative_drained"]/1e6
+        'Logistic_Upper_Drained': logistic_results["upper_ci"]["cumulative_drained"]/1e6,
+        'Exponential_Vault': exponential_results["median"]["cumulative_vault"]/1e6,
+        'Exponential_Lower_Vault': exponential_results["lower_ci"]["cumulative_vault"]/1e6,
+        'Exponential_Upper_Vault': exponential_results["upper_ci"]["cumulative_vault"]/1e6,
+        'Exponential_Drained': exponential_results["median"]["cumulative_drained"]/1e6,
+        'Exponential_Lower_Drained': exponential_results["lower_ci"]["cumulative_drained"]/1e6,
+        'Normalized_Log_Vault': normalized_log_results["median"]["cumulative_vault"]/1e6,
+        'Normalized_Log_Lower_Vault': normalized_log_results["lower_ci"]["cumulative_vault"]/1e6,
+        'Normalized_Log_Upper_Vault': normalized_log_results["upper_ci"]["cumulative_vault"]/1e6,
+        'Normalized_Log_Drained': normalized_log_results["median"]["cumulative_drained"]/1e6,
+        'Normalized_Log_Lower_Drained': normalized_log_results["lower_ci"]["cumulative_drained"]/1e6,
+        'Normalized_Log_Upper_Drained': normalized_log_results["upper_ci"]["cumulative_drained"]/1e6
     })
     
     token_base = alt.Chart(token_data).encode(
@@ -507,11 +576,45 @@ def plot_monte_carlo_results(power_results: Dict[str, Any], logistic_results: Di
     logistic_drained_line = token_base.mark_line(color='blue', strokeDash=[8, 4]).encode(
         y=alt.Y('Logistic_Drained:Q')
     )
-    
+
+    # Exponential Vault
+    exponential_vault_area = token_base.mark_area(opacity=0.3, color=exponential_color).encode(
+        y=alt.Y('Exponential_Lower_Vault:Q'),
+        y2=alt.Y2('Exponential_Upper_Vault:Q')
+    )
+    exponential_vault_line = token_base.mark_line(color=exponential_color).encode(
+        y=alt.Y('Exponential_Vault:Q')
+    )
+    # Drained (Exponential)
+    exponential_drained_area = token_base.mark_area(opacity=0.3, color='green', fillOpacity=0.1).encode(
+        y=alt.Y('Exponential_Lower_Drained:Q'),
+        y2=alt.Y2('Exponential_Upper_Drained:Q')
+    )
+    exponential_drained_line = token_base.mark_line(color='green', strokeDash=[8, 4]).encode(
+        y=alt.Y('Exponential_Drained:Q')
+    )
+
+    # Normalized Log Vault
+    normalized_log_vault_area = token_base.mark_area(opacity=0.3, color=normalized_log_color).encode(
+        y=alt.Y('Normalized_Log_Lower_Vault:Q'),
+        y2=alt.Y2('Normalized_Log_Upper_Vault:Q')
+    )
+    normalized_log_vault_line = token_base.mark_line(color=normalized_log_color).encode(
+        y=alt.Y('Normalized_Log_Vault:Q')
+    )
+    # Drained (Normalized Log)
+    normalized_log_drained_area = token_base.mark_area(opacity=0.3, color='purple', fillOpacity=0.1).encode(
+        y=alt.Y('Normalized_Log_Lower_Drained:Q'),
+        y2=alt.Y2('Normalized_Log_Upper_Drained:Q')
+    )
+    normalized_log_drained_line = token_base.mark_line(color='purple', strokeDash=[8, 4]).encode(
+        y=alt.Y('Normalized_Log_Drained:Q')
+    )
+
     token_melt = pd.melt(
         token_data, 
         id_vars=['Week'], 
-        value_vars=['Power_Vault', 'Power_Drained', 'Logistic_Vault', 'Logistic_Drained'],
+        value_vars=['Power_Vault', 'Power_Drained', 'Logistic_Vault', 'Logistic_Drained', 'Exponential_Vault', 'Exponential_Drained', 'Normalized_Log_Vault', 'Normalized_Log_Drained'],
         var_name='Series', 
         value_name='Value'
     )
@@ -520,8 +623,8 @@ def plot_monte_carlo_results(power_results: Dict[str, Any], logistic_results: Di
         x='Week:Q',
         y='Value:Q',
         color=alt.Color('Series:N', 
-                       scale=alt.Scale(domain=['Power_Vault','Power_Drained','Logistic_Vault','Logistic_Drained'],
-                                       range=[power_color, 'orange', logistic_color, 'blue']),
+                       scale=alt.Scale(domain=['Power_Vault','Power_Drained','Logistic_Vault','Logistic_Drained', 'Exponential_Vault', 'Exponential_Drained', 'Normalized_Log_Vault', 'Normalized_Log_Drained'],
+                                       range=[power_color, 'orange', logistic_color, 'blue', exponential_color, 'green', normalized_log_color, 'purple']),
                        legend=alt.Legend(title='', orient='top')),
         strokeDash=alt.condition(
             (alt.datum.Series == 'Power_Drained') | (alt.datum.Series == 'Logistic_Drained'),
@@ -535,6 +638,10 @@ def plot_monte_carlo_results(power_results: Dict[str, Any], logistic_results: Di
         power_drained_area, power_drained_line,
         logistic_vault_area, logistic_vault_line,
         logistic_drained_area, logistic_drained_line,
+        exponential_vault_area, exponential_vault_line,
+        exponential_drained_area, exponential_drained_line,
+        normalized_log_vault_area, normalized_log_vault_line,
+        normalized_log_drained_area, normalized_log_drained_line,
         token_legend
     ).properties(
         width=400, 
@@ -560,13 +667,13 @@ def plot_monte_carlo_results(power_results: Dict[str, Any], logistic_results: Di
 # Main Streamlit App
 # ======================================================
 def main():
-    st.title("Token Emission Monte Carlo Simulation (with Non-Homogeneous Poisson Option)")
+    st.title("TIG Emission Monte Carlo Simulation")
     
     # ------------- Sidebar ------------------
     st.sidebar.header("Simulation Parameters")
     
     # 1) Choose homogeneous vs non-homogeneous
-    process_type = st.sidebar.radio("Poisson Process Type:", ["Homogeneous", "Non-homogeneous"])
+    process_type = st.sidebar.radio("Poisson Process Type:", ["Non-homogeneous", "Homogeneous"], index=0)
     
     total_weeks = st.sidebar.slider("Total Weeks", min_value=800, max_value=2000, value=1500, step=52)
     
@@ -595,9 +702,17 @@ def main():
     alpha = st.sidebar.slider("Alpha Parameter", min_value=0.01, max_value=0.99, value=0.10, step=0.01)
     
     st.sidebar.subheader("Logistic Parameters")
-    b = st.sidebar.slider("b Parameter", min_value=0.01, max_value=0.99, value=0.10, step=0.01)
-    c = st.sidebar.slider("c Parameter", min_value=10, max_value=200, value=50, step=5)
+    b = st.sidebar.slider("b-Logistic", min_value=0.01, max_value=0.99, value=0.10, step=0.01)
+    c = st.sidebar.slider("c-Logistic", min_value=10, max_value=200, value=50, step=5)
     
+    st.sidebar.subheader("Exponential Parameters")
+    b_exp = st.sidebar.slider("b-Exponential", min_value=0.01, max_value=0.99, value=0.10, step=0.01)
+
+    st.sidebar.subheader("Normalized Log Parameters")
+    a_log = st.sidebar.slider("a", min_value=0.01, max_value=0.99, value=0.10, step=0.01)
+    Nref_log = st.sidebar.slider("Nref", min_value=100, max_value=500, value=250, step=5)
+    
+    st.sidebar.subheader("Monte Carlo Settings")
     n_simulations = st.sidebar.slider("Number of Simulations", min_value=10, max_value=1000, value=100, step=10)
     
     run_button = st.sidebar.button("Run Simulations")
@@ -637,13 +752,40 @@ def main():
             use_nonhomogeneous=(process_type == "Non-homogeneous"),
             custom_rate_func=custom_rate_func
         )
+
+        # ===== Run simulations for Exponential =====
+        status_text.text("Running Monte Carlo simulations for Exponential...")
+        exponential_results = run_monte_carlo_simulations(
+            n_simulations=n_simulations,
+            total_weeks=total_weeks,
+            mean_interarrival_time=mean_interarrival_time,
+            gamma_func=gamma_exponential,
+            gamma_func_params=(b_exp,),
+            progress_callback=lambda p: update_progress(0.5 + p * 0.5),
+            use_nonhomogeneous=(process_type == "Non-homogeneous"),
+            custom_rate_func=custom_rate_func
+        )
+
+        # ===== Run simulations for Normalized Log =====
+        status_text.text("Running Monte Carlo simulations for Normalized Log...")
+        normalized_log_results = run_monte_carlo_simulations(
+            n_simulations=n_simulations,
+            total_weeks=total_weeks,
+            mean_interarrival_time=mean_interarrival_time,
+            gamma_func=gamma_normalized_log,
+            gamma_func_params=(a_log, Nref_log),
+            progress_callback=lambda p: update_progress(0.5 + p * 0.5),
+            use_nonhomogeneous=(process_type == "Non-homogeneous"),
+            custom_rate_func=custom_rate_func
+        )
+        
         
         end_time = time.time()
         status_text.text(f"Simulations completed in {end_time - start_time:.2f} seconds")
         
         # ------------- Display results -------------
-        st.subheader("Simulation Results")
-        charts = plot_monte_carlo_results(power_law_results, logistic_results)
+        # st.subheader("Simulation Results")
+        charts = plot_monte_carlo_results(power_law_results, logistic_results, exponential_results, normalized_log_results)
         
         col1, col2 = st.columns(2)
         with col1:
@@ -685,6 +827,18 @@ def main():
             st.metric("Median Drained (M-TIG)", 
                       f"{logistic_results['median']['cumulative_drained'][-1]/1e6:.2f}M")
 
+        # ------ Exponential metrics ------
+        st.markdown("### Exponential")
+        metrics_cols_exponential = st.columns(3)
+        with metrics_cols_exponential[0]:
+            st.metric("Median Total Minted (M-TIG)", 
+                      f"{exponential_results['median']['cumulative_minted'][-1]/1e6:.2f}M")
+        with metrics_cols_exponential[1]:
+            st.metric("Median Vault Balance (M-TIG)", 
+                      f"{exponential_results['median']['cumulative_vault'][-1]/1e6:.2f}M")
+        with metrics_cols_exponential[2]:
+            st.metric("Median Drained (M-TIG)", 
+                      f"{exponential_results['median']['cumulative_drained'][-1]/1e6:.2f}M")
 
 if __name__ == "__main__":
     main()

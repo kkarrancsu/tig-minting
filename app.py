@@ -774,7 +774,7 @@ def main():
     
     # 2) Gamma Function parameters
     st.sidebar.subheader("Power Law Parameters")
-    alpha = st.sidebar.slider("Alpha Parameter", min_value=0.01, max_value=0.99, value=0.10, step=0.01)
+    alpha = st.sidebar.slider("Alpha Parameter", min_value=0.01, max_value=0.99, value=0.75, step=0.01)
     
     st.sidebar.subheader("Logistic Parameters")
     b = st.sidebar.slider("b-Logistic", min_value=0.01, max_value=0.99, value=0.10, step=0.01)

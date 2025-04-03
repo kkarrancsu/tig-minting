@@ -342,7 +342,7 @@ def add_vault_start_line(chart, vault_start_data):
             strokeDash=[6, 3],
             color='black'
         ).encode(
-            x='Week:Q',
+            x='Round:Q',
             tooltip=['Label:N']
         )
         return alt.layer(chart, vault_line)
@@ -364,13 +364,13 @@ def plot_monte_carlo_results(power_results: Dict[str, Any], logistic_results: Di
     vault_start_data = None
     if vault_start_week > 0:
         vault_start_data = pd.DataFrame({
-            'Week': [vault_start_week],
-            'Label': [f'Vault Starts (Week {vault_start_week})']
+            'Round': [vault_start_week],
+            'Label': [f'Vault Starts (Round {vault_start_week})']
         })
     
     # ========== Chart 1: Emission Schedule ==========
     emission_data = pd.DataFrame({
-        'Week': power_results["time"],
+        'Round': power_results["time"],
         'M(t)': power_results["M"]/1e6,
         'Power M*(t)': power_results["median"]["cumulative_minted"]/1e6,
         'Power_Lower_CI': power_results["lower_ci"]["cumulative_minted"]/1e6,
@@ -387,17 +387,17 @@ def plot_monte_carlo_results(power_results: Dict[str, Any], logistic_results: Di
     })
     
     emission_base = alt.Chart(emission_data).encode(
-        x=alt.X('Week:Q', title='Weeks')
+        x=alt.X('Round:Q', title='Rounds')
     )
     
     emission_line_base = emission_base.mark_line(color='blue').encode(
         y=alt.Y('M(t):Q', title='Cumulative M-TIG Minted'),
-        tooltip=['Week:Q', 'M(t):Q']
+        tooltip=['Round:Q', 'M(t):Q']
     )
     
     power_emission_line = emission_base.mark_line(color=power_color).encode(
         y='Power_M*(t):Q',
-        tooltip=['Week:Q', 'Power_M*(t):Q']
+        tooltip=['Round:Q', 'Power_M*(t):Q']
     )
     power_emission_area = emission_base.mark_area(opacity=0.3, color=power_color).encode(
         y='Power_Lower_CI:Q',
@@ -406,7 +406,7 @@ def plot_monte_carlo_results(power_results: Dict[str, Any], logistic_results: Di
     
     logistic_emission_line = emission_base.mark_line(color=logistic_color).encode(
         y='Logistic_M*(t):Q',
-        tooltip=['Week:Q', 'Logistic_M*(t):Q']
+        tooltip=['Round:Q', 'Logistic_M*(t):Q']
     )
     logistic_emission_area = emission_base.mark_area(opacity=0.3, color=logistic_color).encode(
         y='Logistic_Lower_CI:Q',
@@ -415,7 +415,7 @@ def plot_monte_carlo_results(power_results: Dict[str, Any], logistic_results: Di
 
     exponential_emission_line = emission_base.mark_line(color=exponential_color).encode(
         y='Exponential_M*(t):Q',
-        tooltip=['Week:Q', 'Exponential_M*(t):Q']
+        tooltip=['Round:Q', 'Exponential_M*(t):Q']
     )
     exponential_emission_area = emission_base.mark_area(opacity=0.3, color=exponential_color).encode(
         y='Exponential_Lower_CI:Q',
@@ -424,7 +424,7 @@ def plot_monte_carlo_results(power_results: Dict[str, Any], logistic_results: Di
 
     normalized_log_emission_line = emission_base.mark_line(color=normalized_log_color).encode(
         y='Normalized_Log_M*(t):Q',
-        tooltip=['Week:Q', 'Normalized_Log_M*(t):Q']
+        tooltip=['Round:Q', 'Normalized_Log_M*(t):Q']
     )
     normalized_log_emission_area = emission_base.mark_area(opacity=0.3, color=normalized_log_color).encode(
         y='Normalized_Log_Lower_CI:Q',
@@ -433,14 +433,14 @@ def plot_monte_carlo_results(power_results: Dict[str, Any], logistic_results: Di
 
     emission_melt = pd.melt(
         emission_data, 
-        id_vars=['Week'], 
+        id_vars=['Round'], 
         value_vars=['M(t)', 'Power M*(t)', 'Logistic M*(t)', 'Exponential M*(t)', 'NormalizedLog M*(t)'],
         var_name='Series', 
         value_name='Value'
     )
     
     emission_legend = alt.Chart(emission_melt).mark_line().encode(
-        x='Week:Q',
+        x='Round:Q',
         y='Value:Q',
         color=alt.Color('Series:N', 
                        scale=alt.Scale(domain=['M(t)', 'Power M*(t)', 'Logistic M*(t)', 'Exponential M*(t)', 'NormalizedLog M*(t)'], 
@@ -463,14 +463,14 @@ def plot_monte_carlo_results(power_results: Dict[str, Any], logistic_results: Di
     
     # ========== Chart 2: Event count (G) ==========
     event_data = pd.DataFrame({
-        'Week': power_results["time"],
+        'Round': power_results["time"],
         'Median_G': power_results["median"]["G"],
         'Lower_G': power_results["lower_ci"]["G"],
         'Upper_G': power_results["upper_ci"]["G"]
     })
     
     event_base = alt.Chart(event_data).encode(
-        x=alt.X('Week:Q', title='Weeks'),
+        x=alt.X('Round:Q', title='Rounds'),
         y=alt.Y('Median_G:Q', title='Total Challenges')
     )
     event_area = event_base.mark_area(opacity=0.3, color='red').encode(
@@ -478,7 +478,7 @@ def plot_monte_carlo_results(power_results: Dict[str, Any], logistic_results: Di
         y2=alt.Y2('Upper_G:Q')
     )
     event_line = event_base.mark_line(color='red').encode(
-        tooltip=['Week:Q', 'Median_G:Q']
+        tooltip=['Round:Q', 'Median_G:Q']
     )
     
     event_chart = alt.layer(
@@ -494,7 +494,7 @@ def plot_monte_carlo_results(power_results: Dict[str, Any], logistic_results: Di
     
     # ========== Chart 3: Gamma chart ==========
     gamma_data = pd.DataFrame({
-        'Week': power_results["time"],
+        'Round': power_results["time"],
         'Power': power_results["median"]["gamma"],
         'Power_Lower_CI': power_results["lower_ci"]["gamma"],
         'Power_Upper_CI': power_results["upper_ci"]["gamma"],
@@ -510,7 +510,7 @@ def plot_monte_carlo_results(power_results: Dict[str, Any], logistic_results: Di
     })
     
     gamma_base = alt.Chart(gamma_data).encode(
-        x=alt.X('Week:Q', title='Weeks')
+        x=alt.X('Round:Q', title='Rounds')
     )
     
     power_gamma_area = gamma_base.mark_area(opacity=0.3, color=power_color).encode(
@@ -519,7 +519,7 @@ def plot_monte_carlo_results(power_results: Dict[str, Any], logistic_results: Di
     )
     power_gamma_line = gamma_base.mark_line(color=power_color).encode(
         y=alt.Y('Power:Q', title='Goal Progress'),
-        tooltip=['Week:Q', 'Power:Q']
+        tooltip=['Round:Q', 'Power:Q']
     )
     
     logistic_gamma_area = gamma_base.mark_area(opacity=0.3, color=logistic_color).encode(
@@ -528,12 +528,12 @@ def plot_monte_carlo_results(power_results: Dict[str, Any], logistic_results: Di
     )
     logistic_gamma_line = gamma_base.mark_line(color=logistic_color).encode(
         y=alt.Y('Logistic:Q'),
-        tooltip=['Week:Q', 'Logistic:Q']
+        tooltip=['Round:Q', 'Logistic:Q']
     )
 
     exponential_gamma_line = gamma_base.mark_line(color=exponential_color).encode(
         y=alt.Y('Exponential:Q'),
-        tooltip=['Week:Q', 'Exponential:Q']
+        tooltip=['Round:Q', 'Exponential:Q']
     )
     exponential_gamma_area = gamma_base.mark_area(opacity=0.3, color=exponential_color).encode(
         y=alt.Y('Exponential_Lower_CI:Q'),
@@ -542,7 +542,7 @@ def plot_monte_carlo_results(power_results: Dict[str, Any], logistic_results: Di
 
     normalized_log_gamma_line = gamma_base.mark_line(color=normalized_log_color).encode(
         y=alt.Y('Normalized_Log:Q'),
-        tooltip=['Week:Q', 'Normalized_Log:Q']
+        tooltip=['Round:Q', 'Normalized_Log:Q']
     )
     normalized_log_gamma_area = gamma_base.mark_area(opacity=0.3, color=normalized_log_color).encode(
         y=alt.Y('Normalized_Log_Lower_CI:Q'),
@@ -551,14 +551,14 @@ def plot_monte_carlo_results(power_results: Dict[str, Any], logistic_results: Di
     
     gamma_melt = pd.melt(
         gamma_data, 
-        id_vars=['Week'], 
+        id_vars=['Round'], 
         value_vars=['Power', 'Logistic', 'Exponential', 'Normalized_Log'],
         var_name='Series', 
         value_name='Value'
     )
     
     gamma_legend = alt.Chart(gamma_melt).mark_line().encode(
-        x='Week:Q',
+        x='Round:Q',
         y='Value:Q',
         color=alt.Color('Series:N', 
                        scale=alt.Scale(domain=['Power', 'Logistic', 'Exponential', 'Normalized_Log'], 
@@ -583,7 +583,7 @@ def plot_monte_carlo_results(power_results: Dict[str, Any], logistic_results: Di
     
     # ========== Chart 4: Cumulative tokens (vault) ==========
     token_data = pd.DataFrame({
-        'Week': power_results["time"],
+        'Round': power_results["time"],
         'Power': power_results["median"]["cumulative_vault"]/1e6,
         'Power_Lower_Vault': power_results["lower_ci"]["cumulative_vault"]/1e6,
         'Power_Upper_Vault': power_results["upper_ci"]["cumulative_vault"]/1e6,
@@ -611,7 +611,7 @@ def plot_monte_carlo_results(power_results: Dict[str, Any], logistic_results: Di
     })
     
     token_base = alt.Chart(token_data).encode(
-        x=alt.X('Week:Q', title='Weeks')
+        x=alt.X('Round:Q', title='Rounds')
     )
     
     # Power Vault
@@ -684,7 +684,7 @@ def plot_monte_carlo_results(power_results: Dict[str, Any], logistic_results: Di
 
     token_melt = pd.melt(
         token_data, 
-        id_vars=['Week'], 
+        id_vars=['Round'], 
         # value_vars=['Power_Vault','Power_Drained','Logistic_Vault','Logistic_Drained', 'Exponential_Vault', 'Exponential_Drained', 'Normalized_Log_Vault', 'Normalized_Log_Drained'],
         value_vars=['Power','Logistic', 'Exponential', 'NormalizedLog'],
         var_name='Series', 
@@ -692,7 +692,7 @@ def plot_monte_carlo_results(power_results: Dict[str, Any], logistic_results: Di
     )
     
     token_legend = alt.Chart(token_melt).mark_line().encode(
-        x='Week:Q',
+        x='Round:Q',
         y='Value:Q',
         color=alt.Color('Series:N', 
                        scale=alt.Scale(domain=['Power','Logistic','Exponential', 'NormalizedLog'],
@@ -750,19 +750,19 @@ def main():
     # 1) Choose homogeneous vs non-homogeneous
     process_type = st.sidebar.radio("Poisson Process Type:", ["Non-homogeneous", "Homogeneous"], index=0)
     
-    total_weeks = st.sidebar.slider("Total Weeks", min_value=800, max_value=2000, value=1500, step=52)
+    total_weeks = st.sidebar.slider("Total Rounds", min_value=800, max_value=2000, value=1500, step=52)
     
     # NEW: Add initial value for Poisson process
     initial_poisson_value = st.sidebar.number_input("Number of Challenges @ Vault Policy Start", 
                                                    min_value=0, max_value=100, value=4, step=1)
     
     # NEW: Add vault start week
-    vault_start_week = st.sidebar.number_input("Vault Start Week", 
-                                              min_value=74, max_value=total_weeks, value=78, step=1)
+    vault_start_week = st.sidebar.number_input("Vault Start Round", 
+                                              min_value=60, max_value=total_weeks, value=62, step=1)
     gamma_start_y = st.sidebar.number_input("Gamma Start", min_value=0.0, max_value=0.99, value=0.02, step=0.01)
     
     if process_type == "Homogeneous":
-        mean_interarrival_time = st.sidebar.slider("Mean Interarrival Time (weeks)", 
+        mean_interarrival_time = st.sidebar.slider("Mean Interarrival Time (Rounds)", 
                                                    min_value=1.0, max_value=52.0, value=10.0, step=1.0)
         custom_rate_func = None
     else:

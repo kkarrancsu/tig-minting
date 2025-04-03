@@ -144,25 +144,25 @@ def gamma_function_power(n: int, alpha: float, n_offset: int = 0, y_offset: floa
     if n < n_offset:
         # linearly increase from 0 to y_offset
         return y_offset + (n-n_offset) * (y_offset - 0) / (n_offset - 0)    
-    return ((n-n_offset) ** alpha) / (1 + (n-n_offset) ** alpha) + y_offset
+    return ((n-n_offset) ** alpha) / (1 + (n-n_offset) ** alpha) * (1-y_offset) + y_offset
 
 def gamma_logistic(n: int, b: float, c: float, n_offset: int = 0, y_offset: float = 0) -> float:
     if n < n_offset:
         # linearly increase from 0 to y_offset
         return y_offset + (n-n_offset) * (y_offset - 0) / (n_offset - 0)
-    return 1 / (1 + np.exp(-b * (n - c - n_offset))) + y_offset
+    return 1 / (1 + np.exp(-b * (n - c - n_offset))) * (1-y_offset) + y_offset
 
 def gamma_exponential(n: int, b: float, n_offset: int = 0, y_offset: float = 0) -> float:
     if n < n_offset:
         # linearly increase from 0 to y_offset
         return y_offset + (n-n_offset) * (y_offset - 0) / (n_offset - 0)
-    return 1-np.exp(-b * (n - n_offset)) + y_offset
+    return 1-np.exp(-b * (n - n_offset)) * (1-y_offset) + y_offset
 
 def gamma_normalized_log(n: int, a: float, N_ref: float, n_offset: int = 0, y_offset: float = 0) -> float:
     if n < n_offset:
         # linearly increase from 0 to y_offset
         return y_offset + (n-n_offset) * (y_offset - 0) / (n_offset - 0)
-    return np.log(1+a*(n-n_offset)) / np.log(1+a*N_ref) + y_offset
+    return np.log(1+a*(n-n_offset)) / np.log(1+a*N_ref) * (1-y_offset) + y_offset
 
 # ======================================================
 # run_simulation (updated to include vault_start_week)
@@ -368,92 +368,97 @@ def plot_monte_carlo_results(power_results: Dict[str, Any], logistic_results: Di
             'Label': [f'Vault Starts (Round {vault_start_week})']
         })
     
+    # Create a shared color scale
+    color_scale = alt.Scale(
+        domain=['Original Schedule', 'Power Law', 'Logistic', 'Exponential', 'Normalized Log'],
+        range=['blue', power_color, logistic_color, exponential_color, normalized_log_color]
+    )
+    
+    # Create a shared legend configuration
+    legend_config = alt.Legend(
+        title='Models',
+        orient='top',
+        direction='horizontal',
+        titleAnchor='middle'
+    )
+    
+    # Create a shared selection for all charts
+    selection = alt.selection_point(
+        name='legend_selection',
+        fields=['Model'],
+        bind='legend',
+    )
+    
     # ========== Chart 1: Emission Schedule ==========
+    time_array = power_results["time"]
+    n_times = len(time_array)
+
+    # Create base emission data with median values
     emission_data = pd.DataFrame({
         'Round': power_results["time"],
-        'M(t)': power_results["M"]/1e6,
-        'Power M*(t)': power_results["median"]["cumulative_minted"]/1e6,
-        'Power_Lower_CI': power_results["lower_ci"]["cumulative_minted"]/1e6,
-        'Power_Upper_CI': power_results["upper_ci"]["cumulative_minted"]/1e6,
-        'Logistic M*(t)': logistic_results["median"]["cumulative_minted"]/1e6,
-        'Logistic_Lower_CI': logistic_results["lower_ci"]["cumulative_minted"]/1e6,
-        'Logistic_Upper_CI': logistic_results["upper_ci"]["cumulative_minted"]/1e6,
-        'Exponential M*(t)': exponential_results["median"]["cumulative_minted"]/1e6,
-        'Exponential_Lower_CI': exponential_results["lower_ci"]["cumulative_minted"]/1e6,
-        'Exponential_Upper_CI': exponential_results["upper_ci"]["cumulative_minted"]/1e6,
-        'NormalizedLog M*(t)': normalized_log_results["median"]["cumulative_minted"]/1e6,
-        'Normalized_Log_Lower_CI': normalized_log_results["lower_ci"]["cumulative_minted"]/1e6,
-        'Normalized_Log_Upper_CI': normalized_log_results["upper_ci"]["cumulative_minted"]/1e6
+        'Original Schedule': power_results["M"]/1e6,
+        'Power Law': power_results["median"]["cumulative_minted"]/1e6,
+        'Power Law_Lower': power_results["lower_ci"]["cumulative_minted"]/1e6,
+        'Power Law_Upper': power_results["upper_ci"]["cumulative_minted"]/1e6,
+        'Logistic': logistic_results["median"]["cumulative_minted"]/1e6,
+        'Logistic_Lower': logistic_results["lower_ci"]["cumulative_minted"]/1e6,
+        'Logistic_Upper': logistic_results["upper_ci"]["cumulative_minted"]/1e6,
+        'Exponential': exponential_results["median"]["cumulative_minted"]/1e6,
+        'Exponential_Lower': exponential_results["lower_ci"]["cumulative_minted"]/1e6,
+        'Exponential_Upper': exponential_results["upper_ci"]["cumulative_minted"]/1e6,
+        'Normalized Log': normalized_log_results["median"]["cumulative_minted"]/1e6,
+        'Normalized Log_Lower': normalized_log_results["lower_ci"]["cumulative_minted"]/1e6,
+        'Normalized Log_Upper': normalized_log_results["upper_ci"]["cumulative_minted"]/1e6,
     })
-    
-    emission_base = alt.Chart(emission_data).encode(
-        x=alt.X('Round:Q', title='Rounds')
-    )
-    
-    emission_line_base = emission_base.mark_line(color='blue').encode(
-        y=alt.Y('M(t):Q', title='Cumulative M-TIG Minted'),
-        tooltip=['Round:Q', 'M(t):Q']
-    )
-    
-    power_emission_line = emission_base.mark_line(color=power_color).encode(
-        y='Power_M*(t):Q',
-        tooltip=['Round:Q', 'Power_M*(t):Q']
-    )
-    power_emission_area = emission_base.mark_area(opacity=0.3, color=power_color).encode(
-        y='Power_Lower_CI:Q',
-        y2='Power_Upper_CI:Q'
-    )
-    
-    logistic_emission_line = emission_base.mark_line(color=logistic_color).encode(
-        y='Logistic_M*(t):Q',
-        tooltip=['Round:Q', 'Logistic_M*(t):Q']
-    )
-    logistic_emission_area = emission_base.mark_area(opacity=0.3, color=logistic_color).encode(
-        y='Logistic_Lower_CI:Q',
-        y2='Logistic_Upper_CI:Q'
-    )
 
-    exponential_emission_line = emission_base.mark_line(color=exponential_color).encode(
-        y='Exponential_M*(t):Q',
-        tooltip=['Round:Q', 'Exponential_M*(t):Q']
-    )
-    exponential_emission_area = emission_base.mark_area(opacity=0.3, color=exponential_color).encode(
-        y='Exponential_Lower_CI:Q',
-        y2='Exponential_Upper_CI:Q'
-    )
-
-    normalized_log_emission_line = emission_base.mark_line(color=normalized_log_color).encode(
-        y='Normalized_Log_M*(t):Q',
-        tooltip=['Round:Q', 'Normalized_Log_M*(t):Q']
-    )
-    normalized_log_emission_area = emission_base.mark_area(opacity=0.3, color=normalized_log_color).encode(
-        y='Normalized_Log_Lower_CI:Q',
-        y2='Normalized_Log_Upper_CI:Q'
-    )
-
-    emission_melt = pd.melt(
-        emission_data, 
-        id_vars=['Round'], 
-        value_vars=['M(t)', 'Power M*(t)', 'Logistic M*(t)', 'Exponential M*(t)', 'NormalizedLog M*(t)'],
-        var_name='Series', 
+    # Melt the data for the main lines
+    emission_lines = pd.melt(
+        emission_data,
+        id_vars=['Round'],
+        value_vars=['Original Schedule', 'Power Law', 'Logistic', 'Exponential', 'Normalized Log'],
+        var_name='Model',
         value_name='Value'
     )
-    
-    emission_legend = alt.Chart(emission_melt).mark_line().encode(
+
+    # Create a separate DataFrame for confidence intervals (excluding Original Schedule)
+    emission_ci = pd.DataFrame({
+        'Round': np.tile(power_results["time"], 4),
+        'Model': np.repeat(['Power Law', 'Logistic', 'Exponential', 'Normalized Log'], len(power_results["time"])),
+        'Lower_CI': np.concatenate([
+            power_results["lower_ci"]["cumulative_minted"]/1e6,
+            logistic_results["lower_ci"]["cumulative_minted"]/1e6,
+            exponential_results["lower_ci"]["cumulative_minted"]/1e6,
+            normalized_log_results["lower_ci"]["cumulative_minted"]/1e6
+        ]),
+        'Upper_CI': np.concatenate([
+            power_results["upper_ci"]["cumulative_minted"]/1e6,
+            logistic_results["upper_ci"]["cumulative_minted"]/1e6,
+            exponential_results["upper_ci"]["cumulative_minted"]/1e6,
+            normalized_log_results["upper_ci"]["cumulative_minted"]/1e6
+        ])
+    })
+
+    # Create the emission chart with both lines and confidence intervals
+    emission_area = alt.Chart(emission_ci).mark_area(opacity=0.3).encode(
         x='Round:Q',
-        y='Value:Q',
-        color=alt.Color('Series:N', 
-                       scale=alt.Scale(domain=['M(t)', 'Power M*(t)', 'Logistic M*(t)', 'Exponential M*(t)', 'NormalizedLog M*(t)'], 
-                                       range=['blue', power_color, logistic_color, exponential_color, normalized_log_color]),
-                       legend=alt.Legend(title='', orient='top')),
+        y='Lower_CI:Q',
+        y2='Upper_CI:Q',
+        color=alt.Color('Model:N', scale=color_scale),
+        opacity=alt.condition(selection, alt.value(0.3), alt.value(0.1))
     )
-    
-    emission_chart = alt.layer(
-        power_emission_area, logistic_emission_area, exponential_emission_area, normalized_log_emission_area,
-        emission_line_base, power_emission_line, logistic_emission_line, exponential_emission_line, normalized_log_emission_line,
-        emission_legend
+
+    emission_line = alt.Chart(emission_lines).mark_line().encode(
+        x=alt.X('Round:Q', title='Rounds'),
+        y=alt.Y('Value:Q', title='Cumulative M-TIG Minted'),
+        color=alt.Color('Model:N', scale=color_scale, legend=legend_config),
+        tooltip=['Round:Q', 'Value:Q', 'Model:N'],
+        opacity=alt.condition(selection, alt.value(1), alt.value(0.1))
+    )
+
+    emission_chart = alt.layer(emission_area, emission_line).add_params(
+        selection
     ).properties(
-        width=400, 
+        width=400,
         height=300,
         title='Token Emission Schedule'
     )
@@ -493,87 +498,71 @@ def plot_monte_carlo_results(power_results: Dict[str, Any], logistic_results: Di
     event_chart = add_vault_start_line(event_chart, vault_start_data)
     
     # ========== Chart 3: Gamma chart ==========
+    # First create the base data with all values
     gamma_data = pd.DataFrame({
         'Round': power_results["time"],
-        'Power': power_results["median"]["gamma"],
-        'Power_Lower_CI': power_results["lower_ci"]["gamma"],
-        'Power_Upper_CI': power_results["upper_ci"]["gamma"],
+        'Power Law': power_results["median"]["gamma"],
+        'Power Law_Lower': power_results["lower_ci"]["gamma"],
+        'Power Law_Upper': power_results["upper_ci"]["gamma"],
         'Logistic': logistic_results["median"]["gamma"],
-        'Logistic_Lower_CI': logistic_results["lower_ci"]["gamma"],
-        'Logistic_Upper_CI': logistic_results["upper_ci"]["gamma"],
+        'Logistic_Lower': logistic_results["lower_ci"]["gamma"],
+        'Logistic_Upper': logistic_results["upper_ci"]["gamma"],
         'Exponential': exponential_results["median"]["gamma"],
-        'Exponential_Lower_CI': exponential_results["lower_ci"]["gamma"],
-        'Exponential_Upper_CI': exponential_results["upper_ci"]["gamma"],
-        'Normalized_Log': normalized_log_results["median"]["gamma"],
-        'Normalized_Log_Lower_CI': normalized_log_results["lower_ci"]["gamma"],
-        'Normalized_Log_Upper_CI': normalized_log_results["upper_ci"]["gamma"]
+        'Exponential_Lower': exponential_results["lower_ci"]["gamma"],
+        'Exponential_Upper': exponential_results["upper_ci"]["gamma"],
+        'Normalized Log': normalized_log_results["median"]["gamma"],
+        'Normalized Log_Lower': normalized_log_results["lower_ci"]["gamma"],
+        'Normalized Log_Upper': normalized_log_results["upper_ci"]["gamma"]
     })
-    
-    gamma_base = alt.Chart(gamma_data).encode(
-        x=alt.X('Round:Q', title='Rounds')
-    )
-    
-    power_gamma_area = gamma_base.mark_area(opacity=0.3, color=power_color).encode(
-        y=alt.Y('Power_Lower_CI:Q'),
-        y2=alt.Y2('Power_Upper_CI:Q')
-    )
-    power_gamma_line = gamma_base.mark_line(color=power_color).encode(
-        y=alt.Y('Power:Q', title='Goal Progress'),
-        tooltip=['Round:Q', 'Power:Q']
-    )
-    
-    logistic_gamma_area = gamma_base.mark_area(opacity=0.3, color=logistic_color).encode(
-        y=alt.Y('Logistic_Lower_CI:Q'),
-        y2=alt.Y2('Logistic_Upper_CI:Q')
-    )
-    logistic_gamma_line = gamma_base.mark_line(color=logistic_color).encode(
-        y=alt.Y('Logistic:Q'),
-        tooltip=['Round:Q', 'Logistic:Q']
-    )
 
-    exponential_gamma_line = gamma_base.mark_line(color=exponential_color).encode(
-        y=alt.Y('Exponential:Q'),
-        tooltip=['Round:Q', 'Exponential:Q']
-    )
-    exponential_gamma_area = gamma_base.mark_area(opacity=0.3, color=exponential_color).encode(
-        y=alt.Y('Exponential_Lower_CI:Q'),
-        y2=alt.Y2('Exponential_Upper_CI:Q')
-    )
-
-    normalized_log_gamma_line = gamma_base.mark_line(color=normalized_log_color).encode(
-        y=alt.Y('Normalized_Log:Q'),
-        tooltip=['Round:Q', 'Normalized_Log:Q']
-    )
-    normalized_log_gamma_area = gamma_base.mark_area(opacity=0.3, color=normalized_log_color).encode(
-        y=alt.Y('Normalized_Log_Lower_CI:Q'),
-        y2=alt.Y2('Normalized_Log_Upper_CI:Q')
-    )
-    
-    gamma_melt = pd.melt(
-        gamma_data, 
-        id_vars=['Round'], 
-        value_vars=['Power', 'Logistic', 'Exponential', 'Normalized_Log'],
-        var_name='Series', 
+    # Melt the data for the main lines
+    gamma_lines = pd.melt(
+        gamma_data,
+        id_vars=['Round'],
+        value_vars=['Power Law', 'Logistic', 'Exponential', 'Normalized Log'],
+        var_name='Model',
         value_name='Value'
     )
-    
-    gamma_legend = alt.Chart(gamma_melt).mark_line().encode(
+
+    # Create a separate DataFrame for confidence intervals
+    gamma_ci = pd.DataFrame({
+        'Round': np.tile(power_results["time"], 4),
+        'Model': np.repeat(['Power Law', 'Logistic', 'Exponential', 'Normalized Log'], len(power_results["time"])),
+        'Lower_CI': np.concatenate([
+            power_results["lower_ci"]["gamma"],
+            logistic_results["lower_ci"]["gamma"],
+            exponential_results["lower_ci"]["gamma"],
+            normalized_log_results["lower_ci"]["gamma"]
+        ]),
+        'Upper_CI': np.concatenate([
+            power_results["upper_ci"]["gamma"],
+            logistic_results["upper_ci"]["gamma"],
+            exponential_results["upper_ci"]["gamma"],
+            normalized_log_results["upper_ci"]["gamma"]
+        ])
+    })
+
+    # Create the gamma chart with both lines and confidence intervals
+    gamma_area = alt.Chart(gamma_ci).mark_area(opacity=0.3).encode(
         x='Round:Q',
-        y='Value:Q',
-        color=alt.Color('Series:N', 
-                       scale=alt.Scale(domain=['Power', 'Logistic', 'Exponential', 'Normalized_Log'], 
-                                       range=[power_color, logistic_color, exponential_color, normalized_log_color]),
-                       legend=alt.Legend(title='', orient='top')),
+        y='Lower_CI:Q',
+        y2='Upper_CI:Q',
+        color=alt.Color('Model:N', scale=color_scale),
+        opacity=alt.condition(selection, alt.value(0.3), alt.value(0.1))
     )
-    
-    gamma_chart = alt.layer(
-        power_gamma_area, power_gamma_line,
-        logistic_gamma_area, logistic_gamma_line,
-        exponential_gamma_area, exponential_gamma_line,
-        normalized_log_gamma_area, normalized_log_gamma_line,
-        gamma_legend
+
+    gamma_line = alt.Chart(gamma_lines).mark_line().encode(
+        x=alt.X('Round:Q', title='Rounds'),
+        y=alt.Y('Value:Q', title='Goal Progress'),
+        color=alt.Color('Model:N', scale=color_scale, legend=legend_config),
+        tooltip=['Round:Q', 'Value:Q', 'Model:N'],
+        opacity=alt.condition(selection, alt.value(1), alt.value(0.1))
+    )
+
+    gamma_chart = alt.layer(gamma_area, gamma_line).add_params(
+        selection
     ).properties(
-        width=400, 
+        width=400,
         height=300,
         title='Goal Progress'
     )
@@ -582,141 +571,71 @@ def plot_monte_carlo_results(power_results: Dict[str, Any], logistic_results: Di
     gamma_chart = add_vault_start_line(gamma_chart, vault_start_data)
     
     # ========== Chart 4: Cumulative tokens (vault) ==========
+    # Create the base data with all values
     token_data = pd.DataFrame({
         'Round': power_results["time"],
-        'Power': power_results["median"]["cumulative_vault"]/1e6,
-        'Power_Lower_Vault': power_results["lower_ci"]["cumulative_vault"]/1e6,
-        'Power_Upper_Vault': power_results["upper_ci"]["cumulative_vault"]/1e6,
-        'Power_Drained': power_results["median"]["cumulative_drained"]/1e6,
-        'Power_Lower_Drained': power_results["lower_ci"]["cumulative_drained"]/1e6,
-        'Power_Upper_Drained': power_results["upper_ci"]["cumulative_drained"]/1e6,
+        'Power Law': power_results["median"]["cumulative_vault"]/1e6,
+        'Power Law_Lower': power_results["lower_ci"]["cumulative_vault"]/1e6,
+        'Power Law_Upper': power_results["upper_ci"]["cumulative_vault"]/1e6,
         'Logistic': logistic_results["median"]["cumulative_vault"]/1e6,
-        'Logistic_Lower_Vault': logistic_results["lower_ci"]["cumulative_vault"]/1e6,
-        'Logistic_Upper_Vault': logistic_results["upper_ci"]["cumulative_vault"]/1e6,
-        'Logistic_Drained': logistic_results["median"]["cumulative_drained"]/1e6,
-        'Logistic_Lower_Drained': logistic_results["lower_ci"]["cumulative_drained"]/1e6,
-        'Logistic_Upper_Drained': logistic_results["upper_ci"]["cumulative_drained"]/1e6,
+        'Logistic_Lower': logistic_results["lower_ci"]["cumulative_vault"]/1e6,
+        'Logistic_Upper': logistic_results["upper_ci"]["cumulative_vault"]/1e6,
         'Exponential': exponential_results["median"]["cumulative_vault"]/1e6,
-        'Exponential_Lower_Vault': exponential_results["lower_ci"]["cumulative_vault"]/1e6,
-        'Exponential_Upper_Vault': exponential_results["upper_ci"]["cumulative_vault"]/1e6,
-        'Exponential_Drained': exponential_results["median"]["cumulative_drained"]/1e6,
-        'Exponential_Lower_Drained': exponential_results["lower_ci"]["cumulative_drained"]/1e6,
-        'Exponential_Upper_Drained': exponential_results["upper_ci"]["cumulative_drained"]/1e6,
-        'NormalizedLog': normalized_log_results["median"]["cumulative_vault"]/1e6,
-        'Normalized_Log_Lower_Vault': normalized_log_results["lower_ci"]["cumulative_vault"]/1e6,
-        'Normalized_Log_Upper_Vault': normalized_log_results["upper_ci"]["cumulative_vault"]/1e6,
-        'Normalized_Log_Drained': normalized_log_results["median"]["cumulative_drained"]/1e6,
-        'Normalized_Log_Lower_Drained': normalized_log_results["lower_ci"]["cumulative_drained"]/1e6,
-        'Normalized_Log_Upper_Drained': normalized_log_results["upper_ci"]["cumulative_drained"]/1e6
+        'Exponential_Lower': exponential_results["lower_ci"]["cumulative_vault"]/1e6,
+        'Exponential_Upper': exponential_results["upper_ci"]["cumulative_vault"]/1e6,
+        'Normalized Log': normalized_log_results["median"]["cumulative_vault"]/1e6,
+        'Normalized Log_Lower': normalized_log_results["lower_ci"]["cumulative_vault"]/1e6,
+        'Normalized Log_Upper': normalized_log_results["upper_ci"]["cumulative_vault"]/1e6
     })
-    
-    token_base = alt.Chart(token_data).encode(
-        x=alt.X('Round:Q', title='Rounds')
-    )
-    
-    # Power Vault
-    power_vault_area = token_base.mark_area(opacity=0.3, color=power_color).encode(
-        y=alt.Y('Power_Lower_Vault:Q'),
-        y2=alt.Y2('Power_Upper_Vault:Q')
-    )
-    power_vault_line = token_base.mark_line(color=power_color).encode(
-        y=alt.Y('Power_Vault:Q', title='M-TIG')
-    )
-    # # Drained (Power)
-    # power_drained_area = token_base.mark_area(opacity=0.3, color='orange', fillOpacity=0.1).encode(
-    #     y=alt.Y('Power_Lower_Drained:Q'),
-    #     y2=alt.Y2('Power_Upper_Drained:Q')
-    # )
-    # power_drained_line = token_base.mark_line(color='orange', strokeDash=[8, 4]).encode(
-    #     y=alt.Y('Power_Drained:Q')
-    # )
-    
-    # Logistic Vault
-    logistic_vault_area = token_base.mark_area(opacity=0.3, color=logistic_color).encode(
-        y=alt.Y('Logistic_Lower_Vault:Q'),
-        y2=alt.Y2('Logistic_Upper_Vault:Q')
-    )
-    logistic_vault_line = token_base.mark_line(color=logistic_color).encode(
-        y=alt.Y('Logistic_Vault:Q')
-    )
-    # # Drained (Logistic)
-    # logistic_drained_area = token_base.mark_area(opacity=0.3, color='blue', fillOpacity=0.1).encode(
-    #     y=alt.Y('Logistic_Lower_Drained:Q'),
-    #     y2=alt.Y2('Logistic_Upper_Drained:Q')
-    # )
-    # logistic_drained_line = token_base.mark_line(color='blue', strokeDash=[8, 4]).encode(
-    #     y=alt.Y('Logistic_Drained:Q')
-    # )
 
-    # Exponential Vault
-    exponential_vault_area = token_base.mark_area(opacity=0.3, color=exponential_color).encode(
-        y=alt.Y('Exponential_Lower_Vault:Q'),
-        y2=alt.Y2('Exponential_Upper_Vault:Q')
-    )
-    exponential_vault_line = token_base.mark_line(color=exponential_color).encode(
-        y=alt.Y('Exponential_Vault:Q')
-    )
-    # # Drained (Exponential)
-    # exponential_drained_area = token_base.mark_area(opacity=0.3, color='green', fillOpacity=0.1).encode(
-    #     y=alt.Y('Exponential_Lower_Drained:Q'),
-    #     y2=alt.Y2('Exponential_Upper_Drained:Q')
-    # )
-    # exponential_drained_line = token_base.mark_line(color='green', strokeDash=[8, 4]).encode(
-    #     y=alt.Y('Exponential_Drained:Q')
-    # )
-
-    # Normalized Log Vault
-    normalized_log_vault_area = token_base.mark_area(opacity=0.3, color=normalized_log_color).encode(
-        y=alt.Y('Normalized_Log_Lower_Vault:Q'),
-        y2=alt.Y2('Normalized_Log_Upper_Vault:Q')
-    )
-    normalized_log_vault_line = token_base.mark_line(color=normalized_log_color).encode(
-        y=alt.Y('Normalized_Log_Vault:Q')
-    )
-    # # Drained (Normalized Log)
-    # normalized_log_drained_area = token_base.mark_area(opacity=0.3, color='purple', fillOpacity=0.1).encode(
-    #     y=alt.Y('Normalized_Log_Lower_Drained:Q'),
-    #     y2=alt.Y2('Normalized_Log_Upper_Drained:Q')
-    # )
-    # normalized_log_drained_line = token_base.mark_line(color='purple', strokeDash=[8, 4]).encode(
-    #     y=alt.Y('Normalized_Log_Drained:Q')
-    # )
-
-    token_melt = pd.melt(
-        token_data, 
-        id_vars=['Round'], 
-        # value_vars=['Power_Vault','Power_Drained','Logistic_Vault','Logistic_Drained', 'Exponential_Vault', 'Exponential_Drained', 'Normalized_Log_Vault', 'Normalized_Log_Drained'],
-        value_vars=['Power','Logistic', 'Exponential', 'NormalizedLog'],
-        var_name='Series', 
+    # Melt the data for the main lines
+    token_lines = pd.melt(
+        token_data,
+        id_vars=['Round'],
+        value_vars=['Power Law', 'Logistic', 'Exponential', 'Normalized Log'],
+        var_name='Model',
         value_name='Value'
     )
-    
-    token_legend = alt.Chart(token_melt).mark_line().encode(
+
+    # Create a separate DataFrame for confidence intervals
+    token_ci = pd.DataFrame({
+        'Round': np.tile(power_results["time"], 4),
+        'Model': np.repeat(['Power Law', 'Logistic', 'Exponential', 'Normalized Log'], len(power_results["time"])),
+        'Lower_CI': np.concatenate([
+            power_results["lower_ci"]["cumulative_vault"]/1e6,
+            logistic_results["lower_ci"]["cumulative_vault"]/1e6,
+            exponential_results["lower_ci"]["cumulative_vault"]/1e6,
+            normalized_log_results["lower_ci"]["cumulative_vault"]/1e6
+        ]),
+        'Upper_CI': np.concatenate([
+            power_results["upper_ci"]["cumulative_vault"]/1e6,
+            logistic_results["upper_ci"]["cumulative_vault"]/1e6,
+            exponential_results["upper_ci"]["cumulative_vault"]/1e6,
+            normalized_log_results["upper_ci"]["cumulative_vault"]/1e6
+        ])
+    })
+
+    # Create the token chart with both lines and confidence intervals
+    token_area = alt.Chart(token_ci).mark_area(opacity=0.3).encode(
         x='Round:Q',
-        y='Value:Q',
-        color=alt.Color('Series:N', 
-                       scale=alt.Scale(domain=['Power','Logistic','Exponential', 'NormalizedLog'],
-                                       range=[power_color, logistic_color, exponential_color, normalized_log_color]),
-                       legend=alt.Legend(title='', orient='top')),
-        # strokeDash=alt.condition(
-        #     "indexof(datum.Series, 'Drained') >= 0",
-        #     alt.value([8, 4]),
-        #     alt.value([0])
-        # )
+        y='Lower_CI:Q',
+        y2='Upper_CI:Q',
+        color=alt.Color('Model:N', scale=color_scale),
+        opacity=alt.condition(selection, alt.value(0.3), alt.value(0.1))
     )
-    
-    token_chart = alt.layer(
-        power_vault_area, power_vault_line,
-        # power_drained_area, power_drained_line,
-        logistic_vault_area, logistic_vault_line,
-        # logistic_drained_area, logistic_drained_line,
-        exponential_vault_area, exponential_vault_line,
-        # exponential_drained_area, exponential_drained_line,
-        normalized_log_vault_area, normalized_log_vault_line,
-        # normalized_log_drained_area, normalized_log_drained_line,
-        token_legend
+
+    token_line = alt.Chart(token_lines).mark_line().encode(
+        x=alt.X('Round:Q', title='Rounds'),
+        y=alt.Y('Value:Q', title='M-TIG'),
+        color=alt.Color('Model:N', scale=color_scale, legend=legend_config),
+        tooltip=['Round:Q', 'Value:Q', 'Model:N'],
+        opacity=alt.condition(selection, alt.value(1), alt.value(0.1))
+    )
+
+    token_chart = alt.layer(token_area, token_line).add_params(
+        selection
     ).properties(
-        width=400, 
+        width=400,
         height=300,
         title='Vault Dynamics'
     )
@@ -724,10 +643,12 @@ def plot_monte_carlo_results(power_results: Dict[str, Any], logistic_results: Di
     # Add vault start line to token chart
     token_chart = add_vault_start_line(token_chart, vault_start_data)
     
-    # Layout: 2x2
-    top_row = alt.hconcat(emission_chart, token_chart, spacing=0)
-    bottom_row = alt.hconcat(event_chart, gamma_chart, spacing=0)
-    final_chart = alt.vconcat(top_row, bottom_row, spacing=0)
+    # Layout: 2x2 grid of charts (no separate legend row needed)
+    top_row = alt.hconcat(emission_chart, token_chart, spacing=20)
+    bottom_row = alt.hconcat(event_chart, gamma_chart, spacing=20)
+    final_chart = alt.vconcat(top_row, bottom_row, spacing=20).configure_view(
+        strokeWidth=0
+    )
     
     return {
         "emission_chart": emission_chart,
@@ -808,7 +729,6 @@ def main():
         start_time = time.time()
         
         gamma_start_n = initial_poisson_value
-        gamma_start_y = gamma_start_y
         # ===== Run simulations for Power Law =====
         status_text.text("Running Monte Carlo simulations for Power Law...")
         power_law_results = run_monte_carlo_simulations(

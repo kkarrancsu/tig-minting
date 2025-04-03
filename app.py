@@ -140,25 +140,29 @@ def generate_poisson_process_nonhomogeneous(
 # ======================
 # Gamma functions
 # ======================
-def gamma_function_power(n: int, alpha: float, offset: int = 0) -> float:
-    if n < offset:
-        return 0
-    return ((n-offset) ** alpha) / (1 + (n-offset) ** alpha)
+def gamma_function_power(n: int, alpha: float, n_offset: int = 0, y_offset: float = 0) -> float:
+    if n < n_offset:
+        # linearly increase from 0 to y_offset
+        return y_offset + (n-n_offset) * (y_offset - 0) / (n_offset - 0)    
+    return ((n-n_offset) ** alpha) / (1 + (n-n_offset) ** alpha) + y_offset
 
-def gamma_logistic(n: int, b: float, c: float, offset: int = 0) -> float:
-    if n < offset:
-        return 0
-    return 1 / (1 + np.exp(-b * (n - c - offset)))
+def gamma_logistic(n: int, b: float, c: float, n_offset: int = 0, y_offset: float = 0) -> float:
+    if n < n_offset:
+        # linearly increase from 0 to y_offset
+        return y_offset + (n-n_offset) * (y_offset - 0) / (n_offset - 0)
+    return 1 / (1 + np.exp(-b * (n - c - n_offset))) + y_offset
 
-def gamma_exponential(n: int, b: float, offset: int = 0) -> float:
-    if n < offset:
-        return 0
-    return 1-np.exp(-b * (n - offset))
+def gamma_exponential(n: int, b: float, n_offset: int = 0, y_offset: float = 0) -> float:
+    if n < n_offset:
+        # linearly increase from 0 to y_offset
+        return y_offset + (n-n_offset) * (y_offset - 0) / (n_offset - 0)
+    return 1-np.exp(-b * (n - n_offset)) + y_offset
 
-def gamma_normalized_log(n: int, a: float, N_ref: float, offset: int = 0) -> float:
-    if n < offset:
-        return 0
-    return np.log(1+a*(n-offset)) / np.log(1+a*N_ref)
+def gamma_normalized_log(n: int, a: float, N_ref: float, n_offset: int = 0, y_offset: float = 0) -> float:
+    if n < n_offset:
+        # linearly increase from 0 to y_offset
+        return y_offset + (n-n_offset) * (y_offset - 0) / (n_offset - 0)
+    return np.log(1+a*(n-n_offset)) / np.log(1+a*N_ref) + y_offset
 
 # ======================================================
 # run_simulation (updated to include vault_start_week)
@@ -749,12 +753,13 @@ def main():
     total_weeks = st.sidebar.slider("Total Weeks", min_value=800, max_value=2000, value=1500, step=52)
     
     # NEW: Add initial value for Poisson process
-    initial_poisson_value = st.sidebar.number_input("Initial Poisson Process Value", 
+    initial_poisson_value = st.sidebar.number_input("Number of Challenges @ Vault Policy Start", 
                                                    min_value=0, max_value=100, value=4, step=1)
     
     # NEW: Add vault start week
     vault_start_week = st.sidebar.number_input("Vault Start Week", 
                                               min_value=74, max_value=total_weeks, value=78, step=1)
+    gamma_start_y = st.sidebar.number_input("Gamma Start", min_value=0.0, max_value=0.99, value=0.02, step=0.01)
     
     if process_type == "Homogeneous":
         mean_interarrival_time = st.sidebar.slider("Mean Interarrival Time (weeks)", 
@@ -762,9 +767,9 @@ def main():
         custom_rate_func = None
     else:
         st.sidebar.write("Define your rate function λ(t). For example:")
-        st.sidebar.code("0.1*np.sin(t)**2", language="python")
+        st.sidebar.code("0.015384615+0.00142012*t", language="python")
         
-        rate_str = st.sidebar.text_input("λ(t) =", value="0.1*np.sin(t)**2")
+        rate_str = st.sidebar.text_input("λ(t) =", value="0.015384615+0.00142012*t")
         
         def user_rate_func(t):
             return eval(rate_str, {"t": t, "np": np, "__builtins__": {}})
@@ -802,7 +807,8 @@ def main():
         
         start_time = time.time()
         
-        gamma_start = initial_poisson_value
+        gamma_start_n = initial_poisson_value
+        gamma_start_y = gamma_start_y
         # ===== Run simulations for Power Law =====
         status_text.text("Running Monte Carlo simulations for Power Law...")
         power_law_results = run_monte_carlo_simulations(
@@ -810,7 +816,7 @@ def main():
             total_weeks=total_weeks,
             mean_interarrival_time=mean_interarrival_time,
             gamma_func=gamma_function_power,
-            gamma_func_params=(alpha,gamma_start),
+            gamma_func_params=(alpha,gamma_start_n, gamma_start_y),
             progress_callback=lambda p: update_progress(p * 0.25),
             use_nonhomogeneous=(process_type == "Non-homogeneous"),
             custom_rate_func=custom_rate_func,
@@ -825,7 +831,7 @@ def main():
             total_weeks=total_weeks,
             mean_interarrival_time=mean_interarrival_time,
             gamma_func=gamma_logistic,
-            gamma_func_params=(b, c, gamma_start),
+            gamma_func_params=(b, c, gamma_start_n, gamma_start_y),
             progress_callback=lambda p: update_progress(0.25 + p * 0.25),
             use_nonhomogeneous=(process_type == "Non-homogeneous"),
             custom_rate_func=custom_rate_func,
@@ -840,7 +846,7 @@ def main():
             total_weeks=total_weeks,
             mean_interarrival_time=mean_interarrival_time,
             gamma_func=gamma_exponential,
-            gamma_func_params=(b_exp, gamma_start),
+            gamma_func_params=(b_exp, gamma_start_n, gamma_start_y),
             progress_callback=lambda p: update_progress(0.5 + p * 0.25),
             use_nonhomogeneous=(process_type == "Non-homogeneous"),
             custom_rate_func=custom_rate_func,
@@ -855,7 +861,7 @@ def main():
             total_weeks=total_weeks,
             mean_interarrival_time=mean_interarrival_time,
             gamma_func=gamma_normalized_log,
-            gamma_func_params=(a_log, Nref_log, gamma_start),
+            gamma_func_params=(a_log, Nref_log, gamma_start_n, gamma_start_y),
             progress_callback=lambda p: update_progress(0.75 + p * 0.25),
             use_nonhomogeneous=(process_type == "Non-homogeneous"),
             custom_rate_func=custom_rate_func,

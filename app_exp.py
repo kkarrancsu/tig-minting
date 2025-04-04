@@ -150,19 +150,19 @@ def gamma_logistic(n: int, b: float, c: float, n_offset: int = 0, y_offset: floa
     if n < n_offset:
         # linearly increase from 0 to y_offset
         return y_offset + (n-n_offset) * (y_offset - 0) / (n_offset - 0)
-    return 1 / (1 + np.exp(-b * (n - c - n_offset))) * (1-y_offset) + y_offset
+    return (1 / (1 + np.exp(-b * (n - c - n_offset)))) * (1-y_offset) + y_offset
 
 def gamma_exponential(n: int, b: float, n_offset: int = 0, y_offset: float = 0) -> float:
     if n < n_offset:
         # linearly increase from 0 to y_offset
         return y_offset + (n-n_offset) * (y_offset - 0) / (n_offset - 0)
-    return 1-np.exp(-b * (n - n_offset)) * (1-y_offset) + y_offset
+    return ( 1-np.exp(-b * (n - n_offset)) ) * (1-y_offset) + y_offset
 
 def gamma_normalized_log(n: int, a: float, N_ref: float, n_offset: int = 0, y_offset: float = 0) -> float:
     if n < n_offset:
         # linearly increase from 0 to y_offset
         return y_offset + (n-n_offset) * (y_offset - 0) / (n_offset - 0)
-    return np.log(1+a*(n-n_offset)) / np.log(1+a*N_ref) * (1-y_offset) + y_offset
+    return (np.log(1+a*(n-n_offset)) / np.log(1+a*N_ref)) * (1-y_offset) + y_offset
 
 # ======================================================
 # run_simulation (updated to include vault_start_week)
@@ -240,7 +240,7 @@ def run_simulation(
         
         if start_draining_vault and vault_active:
             # Drain from vault
-            drain_amount = min(mint_amt, vault_total)
+            drain_amount = min(mint_amt/2, vault_total)
             results["vault_drained"][idx] = drain_amount
             vault_total -= drain_amount
             drained_total += drain_amount
@@ -368,15 +368,28 @@ def plot_monte_carlo_results(exponential_results: Dict[str, Any]) -> Dict[str, a
             'Label': [f'Vault Starts (Round {vault_start_week})']
         })
     
-    # Create a shared color scale
-    color_scale = alt.Scale(
+    # Create a shared color scale for Chart 1 (Emission Schedule)
+    emission_color_scale = alt.Scale(
         domain=['Original Schedule', 'Exponential'],
-        range=['blue', power_color, logistic_color, exponential_color, normalized_log_color]
+        range=['blue', 'green']
     )
     
-    # Create a shared legend configuration
+    # Create a separate color scale for Charts 3 and 4 (only Exponential)
+    exponential_color_scale = alt.Scale(
+        domain=['Exponential'],
+        range=['green']
+    )
+    
+    # Create shared legend configurations
     legend_config = alt.Legend(
         title='Models',
+        orient='top',
+        direction='horizontal',
+        titleAnchor='middle'
+    )
+    
+    exponential_legend_config = alt.Legend(
+        title='Model',
         orient='top',
         direction='horizontal',
         titleAnchor='middle'
@@ -424,14 +437,14 @@ def plot_monte_carlo_results(exponential_results: Dict[str, Any]) -> Dict[str, a
         x='Round:Q',
         y='Lower_CI:Q',
         y2='Upper_CI:Q',
-        color=alt.Color('Model:N', scale=color_scale),
+        color=alt.Color('Model:N', scale=emission_color_scale),
         opacity=alt.condition(selection, alt.value(0.3), alt.value(0))
     )
 
     emission_line = alt.Chart(emission_lines).mark_line().encode(
         x=alt.X('Round:Q', title='Rounds'),
-        y=alt.Y('Value:Q', title='Cumulative M-TIG Minted'),
-        color=alt.Color('Model:N', scale=color_scale, legend=legend_config),
+        y=alt.Y('Value:Q', title='Cumulative M-TIG Distributed'),
+        color=alt.Color('Model:N', scale=emission_color_scale, legend=legend_config),
         tooltip=['Round:Q', 'Value:Q', 'Model:N'],
         opacity=alt.condition(selection, alt.value(1), alt.value(0))
     )
@@ -448,6 +461,7 @@ def plot_monte_carlo_results(exponential_results: Dict[str, Any]) -> Dict[str, a
     emission_chart = add_vault_start_line(emission_chart, vault_start_data)
     
     # ========== Chart 2: Event count (G) ==========
+    # Filter data to only include up to 500 rounds
     event_data = pd.DataFrame({
         'Round': exponential_results["time"],
         'Median_G': exponential_results["median"]["G"],
@@ -455,8 +469,11 @@ def plot_monte_carlo_results(exponential_results: Dict[str, Any]) -> Dict[str, a
         'Upper_G': exponential_results["upper_ci"]["G"]
     })
     
+    # Filter to only first 500 rounds
+    event_data = event_data[event_data['Round'] <= 500]
+    
     event_base = alt.Chart(event_data).encode(
-        x=alt.X('Round:Q', title='Rounds'),
+        x=alt.X('Round:Q', title='Rounds', scale=alt.Scale(domain=[0, 500])),
         y=alt.Y('Median_G:Q', title='Total Challenges')
     )
     event_area = event_base.mark_area(opacity=0.3, color='red').encode(
@@ -513,14 +530,14 @@ def plot_monte_carlo_results(exponential_results: Dict[str, Any]) -> Dict[str, a
         x='Round:Q',
         y='Lower_CI:Q',
         y2='Upper_CI:Q',
-        color=alt.Color('Model:N', scale=color_scale),
+        color=alt.Color('Model:N', scale=exponential_color_scale),
         opacity=alt.condition(selection, alt.value(0.3), alt.value(0))
     )
 
     gamma_line = alt.Chart(gamma_lines).mark_line().encode(
         x=alt.X('Round:Q', title='Rounds'),
         y=alt.Y('Value:Q', title='Goal Progress'),
-        color=alt.Color('Model:N', scale=color_scale, legend=legend_config),
+        color=alt.Color('Model:N', scale=exponential_color_scale, legend=exponential_legend_config),
         tooltip=['Round:Q', 'Value:Q', 'Model:N'],
         opacity=alt.condition(selection, alt.value(1), alt.value(0))
     )
@@ -571,14 +588,14 @@ def plot_monte_carlo_results(exponential_results: Dict[str, Any]) -> Dict[str, a
         x='Round:Q',
         y='Lower_CI:Q',
         y2='Upper_CI:Q',
-        color=alt.Color('Model:N', scale=color_scale),
+        color=alt.Color('Model:N', scale=exponential_color_scale),
         opacity=alt.condition(selection, alt.value(0.3), alt.value(0))
     )
 
     token_line = alt.Chart(token_lines).mark_line().encode(
         x=alt.X('Round:Q', title='Rounds'),
         y=alt.Y('Value:Q', title='M-TIG'),
-        color=alt.Color('Model:N', scale=color_scale, legend=legend_config),
+        color=alt.Color('Model:N', scale=exponential_color_scale, legend=exponential_legend_config),
         tooltip=['Round:Q', 'Value:Q', 'Model:N'],
         opacity=alt.condition(selection, alt.value(1), alt.value(0))
     )
@@ -649,21 +666,14 @@ def main():
         custom_rate_func = user_rate_func
         mean_interarrival_time = 1.0  # dummy, not used
     
-    # 2) Gamma Function parameters
-    st.sidebar.subheader("Power Law Parameters")
-    alpha = st.sidebar.slider("Alpha Parameter", min_value=0.01, max_value=0.99, value=0.75, step=0.01)
-    
-    st.sidebar.subheader("Logistic Parameters")
-    b = st.sidebar.slider("b-Logistic", min_value=0.01, max_value=0.99, value=0.10, step=0.01)
-    c = st.sidebar.slider("c-Logistic", min_value=10, max_value=200, value=50, step=5)
-    
     st.sidebar.subheader("Exponential Parameters")
-    b_exp = st.sidebar.slider("b-Exponential", min_value=0.01, max_value=0.99, value=0.10, step=0.01)
+    b_exp = st.sidebar.number_input("b-Exponential", 
+                                  min_value=0.0001, 
+                                  max_value=1.0, 
+                                  value=0.10, 
+                                  step=0.0001, 
+                                  format="%.4f")
 
-    st.sidebar.subheader("Normalized Log Parameters")
-    a_log = st.sidebar.slider("a", min_value=0.01, max_value=0.99, value=0.10, step=0.01)
-    Nref_log = st.sidebar.slider("Nref", min_value=100, max_value=500, value=250, step=5)
-    
     st.sidebar.subheader("Monte Carlo Settings")
     n_simulations = st.sidebar.slider("Number of Simulations", min_value=10, max_value=1000, value=100, step=10)
     
@@ -680,36 +690,7 @@ def main():
         start_time = time.time()
         
         gamma_start_n = initial_poisson_value
-        # # ===== Run simulations for Power Law =====
-        # status_text.text("Running Monte Carlo simulations for Power Law...")
-        # power_law_results = run_monte_carlo_simulations(
-        #     n_simulations=n_simulations,
-        #     total_weeks=total_weeks,
-        #     mean_interarrival_time=mean_interarrival_time,
-        #     gamma_func=gamma_function_power,
-        #     gamma_func_params=(alpha,gamma_start_n, gamma_start_y),
-        #     progress_callback=lambda p: update_progress(p * 0.25),
-        #     use_nonhomogeneous=(process_type == "Non-homogeneous"),
-        #     custom_rate_func=custom_rate_func,
-        #     initial_poisson_value=initial_poisson_value,
-        #     vault_start_week=vault_start_week
-        # )
         
-        # # ===== Run simulations for Logistic =====
-        # status_text.text("Running Monte Carlo simulations for Logistic...")
-        # logistic_results = run_monte_carlo_simulations(
-        #     n_simulations=n_simulations,
-        #     total_weeks=total_weeks,
-        #     mean_interarrival_time=mean_interarrival_time,
-        #     gamma_func=gamma_logistic,
-        #     gamma_func_params=(b, c, gamma_start_n, gamma_start_y),
-        #     progress_callback=lambda p: update_progress(0.25 + p * 0.25),
-        #     use_nonhomogeneous=(process_type == "Non-homogeneous"),
-        #     custom_rate_func=custom_rate_func,
-        #     initial_poisson_value=initial_poisson_value,
-        #     vault_start_week=vault_start_week
-        # )
-
         # ===== Run simulations for Exponential =====
         status_text.text("Running Monte Carlo simulations for Exponential...")
         exponential_results = run_monte_carlo_simulations(
@@ -724,22 +705,6 @@ def main():
             initial_poisson_value=initial_poisson_value,
             vault_start_week=vault_start_week
         )
-
-        # # ===== Run simulations for Normalized Log =====
-        # status_text.text("Running Monte Carlo simulations for Normalized Log...")
-        # normalized_log_results = run_monte_carlo_simulations(
-        #     n_simulations=n_simulations,
-        #     total_weeks=total_weeks,
-        #     mean_interarrival_time=mean_interarrival_time,
-        #     gamma_func=gamma_normalized_log,
-        #     gamma_func_params=(a_log, Nref_log, gamma_start_n, gamma_start_y),
-        #     progress_callback=lambda p: update_progress(0.75 + p * 0.25),
-        #     use_nonhomogeneous=(process_type == "Non-homogeneous"),
-        #     custom_rate_func=custom_rate_func,
-        #     initial_poisson_value=initial_poisson_value,
-        #     vault_start_week=vault_start_week
-        # )
-        
         
         end_time = time.time()
         status_text.text(f"Simulations completed in {end_time - start_time:.2f} seconds")
@@ -759,34 +724,8 @@ def main():
         with col4:
             st.altair_chart(charts["gamma_chart"], use_container_width=True)
         
-        st.subheader("Key Metrics at End of Simulation")
+        st.subheader("Key Metrics")
         
-        # ------ Power Law metrics ------
-        # st.markdown("### Power Law")
-        # metrics_cols_power = st.columns(3)
-        # with metrics_cols_power[0]:
-        #     st.metric("Median Total Minted (M-TIG)", 
-        #               f"{power_law_results['median']['cumulative_minted'][-1]/1e6:.2f}M")
-        # with metrics_cols_power[1]:
-        #     st.metric("Median Vault Balance (M-TIG)", 
-        #               f"{power_law_results['median']['cumulative_vault'][-1]/1e6:.2f}M")
-        # with metrics_cols_power[2]:
-        #     st.metric("Median Drained (M-TIG)", 
-        #               f"{power_law_results['median']['cumulative_drained'][-1]/1e6:.2f}M")
-        
-        # # ------ Logistic metrics ------
-        # st.markdown("### Logistic")
-        # metrics_cols_logistic = st.columns(3)
-        # with metrics_cols_logistic[0]:
-        #     st.metric("Median Total Minted (M-TIG)", 
-        #               f"{logistic_results['median']['cumulative_minted'][-1]/1e6:.2f}M")
-        # with metrics_cols_logistic[1]:
-        #     st.metric("Median Vault Balance (M-TIG)", 
-        #               f"{logistic_results['median']['cumulative_vault'][-1]/1e6:.2f}M")
-        # with metrics_cols_logistic[2]:
-        #     st.metric("Median Drained (M-TIG)", 
-        #               f"{logistic_results['median']['cumulative_drained'][-1]/1e6:.2f}M")
-
         # ------ Exponential metrics ------
         st.markdown("### Exponential")
         metrics_cols_exponential = st.columns(3)
@@ -800,18 +739,5 @@ def main():
             st.metric("Median Drained (M-TIG)", 
                       f"{exponential_results['median']['cumulative_drained'][-1]/1e6:.2f}M")
             
-        # # ------ Normalized Log metrics ------
-        # st.markdown("### Normalized Log")
-        # metrics_cols_normalized_log = st.columns(3)
-        # with metrics_cols_normalized_log[0]:
-        #     st.metric("Median Total Minted (M-TIG)", 
-        #               f"{normalized_log_results['median']['cumulative_minted'][-1]/1e6:.2f}M")
-        # with metrics_cols_normalized_log[1]:
-        #     st.metric("Median Vault Balance (M-TIG)", 
-        #               f"{normalized_log_results['median']['cumulative_vault'][-1]/1e6:.2f}M")
-        # with metrics_cols_normalized_log[2]:
-        #     st.metric("Median Drained (M-TIG)", 
-        #               f"{normalized_log_results['median']['cumulative_drained'][-1]/1e6:.2f}M")
-
 if __name__ == "__main__":
     main()

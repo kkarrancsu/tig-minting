@@ -351,7 +351,7 @@ def add_vault_start_line(chart, vault_start_data):
 # ======================================================
 # Plotting function (updated to show vault start line)
 # ======================================================
-def plot_monte_carlo_results(exponential_results: Dict[str, Any]) -> Dict[str, alt.Chart]:
+def plot_monte_carlo_results(exponential_results: Dict[str, Any], gamma_func_params: tuple) -> Dict[str, alt.Chart]:
     power_color = "green"
     logistic_color = "purple"
     exponential_color = "red"
@@ -611,10 +611,33 @@ def plot_monte_carlo_results(exponential_results: Dict[str, Any]) -> Dict[str, a
     # Add vault start line to token chart
     token_chart = add_vault_start_line(token_chart, vault_start_data)
     
-    # Layout: 2x2 grid of charts (no separate legend row needed)
+    # ========== Chart 5: Gamma Function Plot ==========
+    # Create data for gamma function plot
+    n_values = np.arange(0, 250)  # Show up to 500 challenges
+    gamma_values = []
+    for nn in n_values:
+        gamma_values.append(gamma_exponential(nn, *gamma_func_params))
+    
+    gamma_func_data = pd.DataFrame({
+        'n': n_values,
+        'Gamma': gamma_values
+    })
+    
+    gamma_func_chart = alt.Chart(gamma_func_data).mark_line().encode(
+        x=alt.X('n:Q', title='Number of Challenges (n)'),
+        y=alt.Y('Gamma:Q', title='Gamma Value'),
+        tooltip=['n:Q', 'Gamma:Q']
+    ).properties(
+        width=800,  # Full width to match other plots
+        height=300,
+        title='Gamma Function'
+    )
+    
+    # Layout: 3 rows of charts
     top_row = alt.hconcat(emission_chart, token_chart, spacing=20)
-    bottom_row = alt.hconcat(event_chart, gamma_chart, spacing=20)
-    final_chart = alt.vconcat(top_row, bottom_row, spacing=20).configure_view(
+    middle_row = alt.hconcat(event_chart, gamma_chart, spacing=20)
+    bottom_row = gamma_func_chart
+    final_chart = alt.vconcat(top_row, middle_row, bottom_row, spacing=20).configure_view(
         strokeWidth=0
     )
     
@@ -623,6 +646,7 @@ def plot_monte_carlo_results(exponential_results: Dict[str, Any]) -> Dict[str, a
         "gamma_event_chart": event_chart,
         "token_chart": token_chart,
         "gamma_chart": gamma_chart,
+        "gamma_func_chart": gamma_func_chart,
         "final_chart": final_chart
     }
 
@@ -710,7 +734,7 @@ def main():
         status_text.text(f"Simulations completed in {end_time - start_time:.2f} seconds")
         
         # ------------- Display results -------------
-        charts = plot_monte_carlo_results(exponential_results)
+        charts = plot_monte_carlo_results(exponential_results, (b_exp, gamma_start_n, gamma_start_y))
         
         col1, col2 = st.columns(2)
         with col1:
@@ -724,6 +748,12 @@ def main():
         with col4:
             st.altair_chart(charts["gamma_chart"], use_container_width=True)
         
+        col5, col6 = st.columns(2)
+        with col5:
+            st.altair_chart(charts["gamma_func_chart"], use_container_width=True)
+        # with col6:
+        #     st.altair_chart(charts["final_chart"], use_container_width=True)
+
         st.subheader("Key Metrics")
         
         # ------ Exponential metrics ------

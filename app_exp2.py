@@ -157,8 +157,8 @@ def gamma_logistic(n: int, b: float, c: float, n_offset: int = 0, y_offset: floa
 #         # linearly increase from 0 to y_offset
 #         return y_offset + (n-n_offset) * (y_offset - 0) / (n_offset - 0)
 #     return ( 1-np.exp(-b * (n - n_offset)) ) * (1-y_offset) + y_offset
-def gamma_exponential(n: int, a: float, b: float, c: float, n_offset: int = 0, y_offset: float = 0) -> float:
-    return a*(( 1-b*np.exp(-c * (n - n_offset)) ) * (1-y_offset) + y_offset)
+def gamma_exponential(n: int, a: float, b: float, c: float) -> float:
+    return a*(1-b*np.exp(-c*n))
 
 
 def gamma_normalized_log(n: int, a: float, N_ref: float, n_offset: int = 0, y_offset: float = 0) -> float:

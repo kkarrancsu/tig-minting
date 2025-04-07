@@ -189,6 +189,7 @@ def run_simulation(
         "vault": np.zeros(total_weeks),
         "minted": np.zeros(total_weeks),
         "redirected": np.zeros(total_weeks),
+        "active_side": np.zeros(total_weeks),
         "vault_drained": np.zeros(total_weeks),
         "cumulative_vault": np.zeros(total_weeks),
         "cumulative_minted": np.zeros(total_weeks),
@@ -246,8 +247,13 @@ def run_simulation(
             # Drain from vault
             # drain_amount = min(mint_amt/2, vault_total)  # update with new gamma function
             if t < finish_by:
+                if (results["gamma"][idx]-1) * delta_M > vault_total/(finish_by-t):
+                    active = 0
+                else:
+                    active = 1
                 drain_amount = max((results["gamma"][idx]-1) * delta_M, vault_total/(finish_by-t))
             else:
+                active = 2
                 drain_amount = vault_total
             results["vault_drained"][idx] = drain_amount
             vault_total -= drain_amount
@@ -256,6 +262,7 @@ def run_simulation(
             # The drained amount is effectively minted
             amt_emitted = drain_amount + delta_M
             results["minted"][idx] += amt_emitted
+            results["active_side"][idx] = active
             minted_total += amt_emitted
         else:
             # If we're still in minting phase or vault not active yet
@@ -275,6 +282,7 @@ def run_simulation(
                 mint_amt = delta_M
             
             minted_total += mint_amt
+            results["active_side"][idx] = -1
         
         # Update cumulative
         results["cumulative_vault"][idx] = vault_total
@@ -342,6 +350,7 @@ def run_monte_carlo_simulations(
         aggregated_results["lower_ci"][key] = np.percentile(all_values, 5, axis=0)
         aggregated_results["upper_ci"][key] = np.percentile(all_values, 95, axis=0)
     
+    aggregated_results["active_side"] = np.median(np.array([sim["active_side"] for sim in all_simulations]), axis=0)
     return aggregated_results
 
 # Helper function to add vault start line to charts
